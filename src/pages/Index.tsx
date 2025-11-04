@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import Hero from "@/components/Hero";
 import Auth from "@/components/Auth";
-import Dashboard from "@/components/Dashboard";
+import { Navigate } from "react-router-dom";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 const Index = () => {
@@ -34,9 +34,7 @@ const Index = () => {
     );
   }
 
-  if (user) {
-    return <Dashboard />;
-  }
+  if (user) return <Navigate to="/home" replace />;
 
   return (
     <>
