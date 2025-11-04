@@ -3,11 +3,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarSeparator, SidebarTrigger } from "@/components/ui/sidebar";
-import { Toggle } from "@/components/ui/toggle";
-import { Plus, Search, LogOut, Brain, Tag, List, Grid2X2, Home, MessageSquare, Network, Star, Settings } from "lucide-react";
+import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
+import { Plus, Search, LogOut, Brain, Home, MessageSquare, Network, GraduationCap, Settings, ChevronLeft, List, ChevronDown } from "lucide-react";
 import KnowledgeCard from "./KnowledgeCard";
 import AddContentDialog from "./AddContentDialog";
 import { toast } from "sonner";
@@ -119,215 +117,157 @@ const Dashboard = () => {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen flex">
-        {/* Main Navigation Sidebar */}
-        <div className="w-20 bg-background border-r border-border/50 flex flex-col items-center py-6 gap-6">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center">
-            <Brain className="w-6 h-6 text-white" />
+      <div className="min-h-screen flex w-full bg-background">
+        {/* Main Navigation Sidebar - Very narrow */}
+        <div className="w-16 bg-sidebar border-r border-sidebar-border flex flex-col items-center py-4 gap-4 shrink-0">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center mb-4">
+            <Brain className="w-6 h-6 text-primary-foreground" />
           </div>
-          <nav className="flex flex-col items-center gap-4 flex-1">
-            <Button variant="ghost" size="icon" className="w-12 h-12">
+          <nav className="flex flex-col items-center gap-2 flex-1">
+            <Button variant="ghost" size="icon" className="w-10 h-10 text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent">
               <Home className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="w-12 h-12">
+            <Button variant="ghost" size="icon" className="w-10 h-10 text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent">
               <MessageSquare className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="w-12 h-12">
+            <Button variant="ghost" size="icon" className="w-10 h-10 text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent">
               <Network className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="w-12 h-12">
-              <Star className="w-5 h-5" />
+            <Button variant="ghost" size="icon" className="w-10 h-10 text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent">
+              <GraduationCap className="w-5 h-5" />
             </Button>
           </nav>
-          <div className="flex flex-col items-center gap-4">
-            <Button variant="ghost" size="icon" className="w-12 h-12">
+          <div className="flex flex-col items-center gap-2">
+            <Button variant="ghost" size="icon" className="w-10 h-10 text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent">
               <Settings className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="w-12 h-12" onClick={handleSignOut}>
+            <Button variant="ghost" size="icon" className="w-10 h-10 text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent" onClick={handleSignOut}>
               <LogOut className="w-5 h-5" />
             </Button>
           </div>
         </div>
 
-        <div className="flex-1 flex">
-          <div className="flex gap-0 flex-1">
-            {/* Collections/Tags Sidebar */}
-            <Sidebar className="bg-background border-r border-border/50" collapsible="icon">
-              <SidebarHeader className="px-3 py-4">
-                <div className="flex items-center justify-between">
-                  <SidebarTrigger />
-                </div>
-              </SidebarHeader>
-              <SidebarContent>
-                <SidebarGroup>
-                  <SidebarGroupLabel>Filters</SidebarGroupLabel>
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton asChild>
-                          <button onClick={() => setSelectedTags([])} className="w-full text-left">
-                            All Items
-                          </button>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </SidebarGroup>
+        {/* Collections Sidebar - Collapsible */}
+        <Sidebar className="bg-sidebar border-r border-sidebar-border" collapsible="icon">
+          <SidebarHeader className="p-3 border-b border-sidebar-border">
+            <div className="flex items-center justify-between">
+              <SidebarTrigger className="text-sidebar-foreground" />
+            </div>
+          </SidebarHeader>
+          <SidebarContent>
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {availableCollections.map((col) => (
+                    <SidebarMenuItem key={col}>
+                      <SidebarMenuButton 
+                        asChild 
+                        isActive={selectedCollection === col}
+                        className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                      >
+                        <button onClick={() => setSelectedCollection(col)} className="w-full text-left capitalize">
+                          <ChevronDown className="w-4 h-4" />
+                          {col}
+                        </button>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </SidebarContent>
+        </Sidebar>
 
-                <SidebarSeparator />
-
-                <SidebarGroup>
-                  <SidebarGroupLabel>Collections</SidebarGroupLabel>
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      <SidebarMenuItem>
-                        <SidebarMenuButton asChild isActive={!selectedCollection}>
-                          <button onClick={() => setSelectedCollection(null)} className="w-full text-left">All</button>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                      {availableCollections.map((col) => (
-                        <SidebarMenuItem key={col}>
-                          <SidebarMenuButton asChild isActive={selectedCollection === col}>
-                            <button onClick={() => setSelectedCollection(col)} className="w-full text-left">{col}</button>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      ))}
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </SidebarGroup>
-
-                <SidebarSeparator />
-
-                <SidebarGroup>
-                  <SidebarGroupLabel className="flex items-center gap-2">
-                    <Tag className="w-4 h-4" /> Tags
-                  </SidebarGroupLabel>
-                  <SidebarGroupContent>
-                    <SidebarMenu>
-                      {availableTags.map((tag) => (
-                        <SidebarMenuItem key={tag}>
-                          <SidebarMenuButton asChild isActive={selectedTags.includes(tag)}>
-                            <button
-                              onClick={() =>
-                                setSelectedTags((prev) =>
-                                  prev.includes(tag)
-                                    ? prev.filter((t) => t !== tag)
-                                    : [...prev, tag]
-                                )
-                              }
-                              className="w-full text-left"
-                            >
-                              {tag}
-                            </button>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      ))}
-                    </SidebarMenu>
-                  </SidebarGroupContent>
-                </SidebarGroup>
-              </SidebarContent>
-              <SidebarFooter className="px-3 py-4">
-                <Button size="sm" variant="outline" className="w-full" onClick={async () => {
-                  const origin = window.location.origin;
-                  const code = `javascript:(()=>{const u=location.href;window.open('${origin}/?add='+encodeURIComponent(u),'_self');})();`;
-                  await navigator.clipboard.writeText(code);
-                  toast.success('Bookmarklet copied');
-                }}
-                >
-                  Copy Bookmarklet
-                </Button>
-              </SidebarFooter>
-            </Sidebar>
-
-            {/* Main Content */}
-            <SidebarInset className="flex-1">
-              {/* Header bar */}
-              <div className="sticky top-0 z-40 bg-background border-b border-border/50 px-6 py-4">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="relative flex-1 max-w-md">
-                    <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search your knowledge base..."
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button onClick={() => setAddDialogOpen(true)}>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Content
+        {/* Main Content Area */}
+        <SidebarInset className="flex-1 overflow-auto">
+          <div className="w-full">
+            {/* Top Bar */}
+            <div className="border-b border-border px-6 py-4 flex items-center justify-between gap-4">
+              <div className="flex-1 flex items-center gap-4">
+                {/* Filtered Tags */}
+                {selectedTags.length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm text-muted-foreground">Filtered tags:</span>
+                    {selectedTags.map((t) => (
+                      <Badge 
+                        key={t} 
+                        variant="secondary" 
+                        className="bg-secondary text-secondary-foreground cursor-pointer hover:bg-secondary/80"
+                        onClick={() => setSelectedTags(selectedTags.filter((x) => x !== t))}
+                      >
+                        {t}
+                      </Badge>
+                    ))}
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => setSelectedTags([])}
+                      className="text-sm"
+                    >
+                      Clear all
                     </Button>
                   </div>
-                </div>
+                )}
               </div>
+              
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="icon">
+                  <Search className="w-5 h-5" />
+                </Button>
+                <Button onClick={() => setAddDialogOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                  Add Content
+                </Button>
+              </div>
+            </div>
 
-              {/* Content */}
-              <div className="px-6 py-6">
-                <div className="flex flex-col gap-6">
+            {/* Controls Bar */}
+            <div className="px-6 py-3 flex items-center justify-end gap-2 border-b border-border">
+              <Button 
+                variant={viewMode === "list" ? "secondary" : "ghost"} 
+                size="sm"
+                onClick={() => setViewMode("list")}
+                className="gap-2"
+              >
+                <List className="w-4 h-4" />
+                List
+              </Button>
+              <Select value={orderBy} onValueChange={(v: any) => setOrderBy(v)}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="newest">Newest</SelectItem>
+                  <SelectItem value="oldest">Oldest</SelectItem>
+                  <SelectItem value="title">Title</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
 
-                  {/* Toolbar with tags and view options */}
-                  <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {selectedTags.length > 0 && (
-                        <>
-                          <div className="text-sm text-muted-foreground">Filtered tags:</div>
-                          {selectedTags.map((t) => (
-                            <Badge key={t} variant="secondary" className="cursor-pointer" onClick={() => setSelectedTags(selectedTags.filter((x) => x !== t))}>
-                              {t}
-                            </Badge>
-                          ))}
-                          <Button variant="ghost" size="sm" onClick={() => setSelectedTags([])}>Clear all</Button>
-                        </>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Toggle
-                        pressed={viewMode === "list"}
-                        onPressedChange={(p) => setViewMode(p ? "list" : "grid")}
-                        aria-label="Toggle list view"
-                      >
-                        {viewMode === "list" ? <List className="w-4 h-4" /> : <Grid2X2 className="w-4 h-4" />}
-                      </Toggle>
-                      <Select value={orderBy} onValueChange={(v: any) => setOrderBy(v)}>
-                        <SelectTrigger className="w-[150px]">
-                          <SelectValue placeholder="Order by" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="newest">Newest</SelectItem>
-                          <SelectItem value="oldest">Oldest</SelectItem>
-                          <SelectItem value="title">Title</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </div>
-
-                  {/* Cards area */}
-                  {loading ? (
-                <div className="text-center py-12">
+            {/* Content */}
+            <div className="px-6 py-6">
+              {loading ? (
+                <div className="text-center py-20">
                   <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
-                  <p className="mt-4 text-muted-foreground">Loading your knowledge base...</p>
+                  <p className="mt-4 text-muted-foreground">Loading...</p>
                 </div>
-                  ) : filteredCards.length === 0 ? (
-                <div className="text-center py-12">
+              ) : filteredCards.length === 0 ? (
+                <div className="text-center py-20">
                   <Brain className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
                   <h3 className="text-xl font-semibold mb-2">
                     {searchQuery ? 'No results found' : 'Your knowledge base is empty'}
                   </h3>
                   <p className="text-muted-foreground mb-6">
-                    {searchQuery
-                      ? 'Try a different search term'
-                      : 'Start building your second brain by adding your first piece of content'}
+                    {searchQuery ? 'Try a different search' : 'Start by adding your first piece of content'}
                   </p>
                   {!searchQuery && (
                     <Button onClick={() => setAddDialogOpen(true)}>
                       <Plus className="w-4 h-4 mr-2" />
-                      Add Your First Content
+                      Add Content
                     </Button>
                   )}
                 </div>
-                  ) : (
-                <div className="flex flex-col gap-6">
+              ) : (
+                <div className="space-y-8">
                   {Object.entries(
                     filteredCards.reduce((acc: Record<string, any[]>, card) => {
                       const key = format(new Date(card.created_at), "EEE MMM dd yyyy");
@@ -336,9 +276,9 @@ const Dashboard = () => {
                       return acc;
                     }, {})
                   ).map(([dateLabel, items]: [string, any[]]) => (
-                    <div key={dateLabel} className="flex flex-col gap-3">
-                      <div className="text-sm text-muted-foreground">{dateLabel}</div>
-                      <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "flex flex-col gap-3"}>
+                    <div key={dateLabel} className="space-y-4">
+                      <h2 className="text-base font-medium text-foreground">{dateLabel}</h2>
+                      <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-4"}>
                         {items.map((card) => (
                           <KnowledgeCard
                             key={card.id}
@@ -358,12 +298,10 @@ const Dashboard = () => {
                     </div>
                   ))}
                 </div>
-                  )}
-                </div>
-              </div>
-            </SidebarInset>
+              )}
+            </div>
           </div>
-        </div>
+        </SidebarInset>
 
         <AddContentDialog
           open={addDialogOpen}

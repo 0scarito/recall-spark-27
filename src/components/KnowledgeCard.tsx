@@ -38,43 +38,43 @@ const KnowledgeCard = ({
 
   return (
     <Card
-      className="group hover:shadow-xl transition-all duration-300 cursor-pointer border-border/50 bg-card overflow-hidden"
+      className="group hover:shadow-lg transition-all duration-300 cursor-pointer border-border bg-card overflow-hidden rounded-lg"
       onClick={onClick}
     >
       {imageUrl && (
-        <AspectRatio ratio={16 / 9} className="bg-muted/50">
+        <AspectRatio ratio={16 / 10} className="bg-muted/30">
           <img
             src={imageUrl}
             alt={title}
-            className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
+            className="object-cover w-full h-full group-hover:scale-[1.02] transition-transform duration-300"
             onError={(e) => {
               e.currentTarget.style.display = 'none';
             }}
           />
         </AspectRatio>
       )}
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base line-clamp-2 group-hover:text-primary transition-colors">
+      <CardHeader className="pb-2 pt-4">
+        <CardTitle className="text-base font-semibold line-clamp-2 text-card-foreground group-hover:text-primary transition-colors">
           {title}
         </CardTitle>
       </CardHeader>
       {summary && (
-        <CardContent className="pb-4">
-          <CardDescription className="line-clamp-3 text-sm">
+        <CardContent className="pb-3 pt-0">
+          <CardDescription className="line-clamp-2 text-sm text-muted-foreground">
             {summary}
           </CardDescription>
         </CardContent>
       )}
       <div className="px-6 pb-4">
         <div className="flex flex-wrap gap-2">
-          {tags.filter((tag) => !tag.startsWith('collection:')).slice(0, 3).map((tag, idx) => (
-            <Badge key={idx} variant="secondary" className="text-xs">
+          {tags.filter((tag) => !tag.startsWith('collection:')).slice(0, 2).map((tag, idx) => (
+            <Badge key={idx} className="bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full">
               {tag}
             </Badge>
           ))}
-          {tags.filter((tag) => !tag.startsWith('collection:')).length > 3 && (
-            <Badge variant="secondary" className="text-xs">
-              +{tags.filter((tag) => !tag.startsWith('collection:')).length - 3}
+          {tags.filter((tag) => !tag.startsWith('collection:')).length > 2 && (
+            <Badge className="bg-primary text-primary-foreground text-xs px-3 py-1 rounded-full">
+              +{tags.filter((tag) => !tag.startsWith('collection:')).length - 2}
             </Badge>
           )}
         </div>
