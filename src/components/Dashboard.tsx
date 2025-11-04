@@ -7,7 +7,7 @@ import { Separator } from "@/components/ui/separator";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarSeparator, SidebarTrigger } from "@/components/ui/sidebar";
 import { Toggle } from "@/components/ui/toggle";
-import { Plus, Search, LogOut, Brain, Tag, List, Grid2X2 } from "lucide-react";
+import { Plus, Search, LogOut, Brain, Tag, List, Grid2X2, Home, MessageSquare, Network, Star, Settings } from "lucide-react";
 import KnowledgeCard from "./KnowledgeCard";
 import AddContentDialog from "./AddContentDialog";
 import { toast } from "sonner";
@@ -119,30 +119,44 @@ const Dashboard = () => {
 
   return (
     <SidebarProvider>
-      <div className="min-h-screen">
-        {/* Header */}
-        <header className="border-b border-border/50 backdrop-blur-sm bg-background/95 sticky top-0 z-50">
-          <div className="container mx-auto px-4 py-4 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <SidebarTrigger className="mr-1" />
-              <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center">
-                <Brain className="w-6 h-6 text-white" />
-              </div>
-              <h1 className="text-2xl font-bold">Recall</h1>
-            </div>
-            <Button variant="ghost" size="sm" onClick={handleSignOut}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Sign Out
+      <div className="min-h-screen flex">
+        {/* Main Navigation Sidebar */}
+        <div className="w-20 bg-background border-r border-border/50 flex flex-col items-center py-6 gap-6">
+          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center">
+            <Brain className="w-6 h-6 text-white" />
+          </div>
+          <nav className="flex flex-col items-center gap-4 flex-1">
+            <Button variant="ghost" size="icon" className="w-12 h-12">
+              <Home className="w-5 h-5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="w-12 h-12">
+              <MessageSquare className="w-5 h-5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="w-12 h-12">
+              <Network className="w-5 h-5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="w-12 h-12">
+              <Star className="w-5 h-5" />
+            </Button>
+          </nav>
+          <div className="flex flex-col items-center gap-4">
+            <Button variant="ghost" size="icon" className="w-12 h-12">
+              <Settings className="w-5 h-5" />
+            </Button>
+            <Button variant="ghost" size="icon" className="w-12 h-12" onClick={handleSignOut}>
+              <LogOut className="w-5 h-5" />
             </Button>
           </div>
-        </header>
+        </div>
 
-        <div className="container mx-auto px-4">
-          <div className="flex gap-4">
-            {/* Sidebar */}
-            <Sidebar className="bg-background/40 border-border/50" collapsible="icon">
-              <SidebarHeader className="px-3 py-2">
-                <div className="text-sm text-muted-foreground">Library</div>
+        <div className="flex-1 flex">
+          <div className="flex gap-0 flex-1">
+            {/* Collections/Tags Sidebar */}
+            <Sidebar className="bg-background border-r border-border/50" collapsible="icon">
+              <SidebarHeader className="px-3 py-4">
+                <div className="flex items-center justify-between">
+                  <SidebarTrigger />
+                </div>
               </SidebarHeader>
               <SidebarContent>
                 <SidebarGroup>
@@ -212,40 +226,60 @@ const Dashboard = () => {
                   </SidebarGroupContent>
                 </SidebarGroup>
               </SidebarContent>
-              <SidebarFooter className="px-3 py-2">
-                <Button size="sm" className="w-full" onClick={() => setAddDialogOpen(true)}>
-                  <Plus className="w-4 h-4 mr-2" /> Add Content
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full mt-2"
-                  onClick={async () => {
-                    const origin = window.location.origin;
-                    const code = `javascript:(()=>{const u=location.href;window.open('${origin}/?add='+encodeURIComponent(u),'_self');})();`;
-                    await navigator.clipboard.writeText(code);
-                    toast.success('Bookmarklet copié. Ajoutez-le à votre barre de favoris.');
-                  }}
+              <SidebarFooter className="px-3 py-4">
+                <Button size="sm" variant="outline" className="w-full" onClick={async () => {
+                  const origin = window.location.origin;
+                  const code = `javascript:(()=>{const u=location.href;window.open('${origin}/?add='+encodeURIComponent(u),'_self');})();`;
+                  await navigator.clipboard.writeText(code);
+                  toast.success('Bookmarklet copied');
+                }}
                 >
                   Copy Bookmarklet
                 </Button>
               </SidebarFooter>
             </Sidebar>
 
-            {/* Main */}
+            {/* Main Content */}
             <SidebarInset className="flex-1">
-              {/* Tool bar */}
-              <div className="py-6">
-                <div className="flex flex-col gap-4">
-                  <div className="flex flex-col sm:flex-row gap-4">
-                    <div className="relative flex-1">
-                      <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Search your knowledge base..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-10"
-                      />
+              {/* Header bar */}
+              <div className="sticky top-0 z-40 bg-background border-b border-border/50 px-6 py-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div className="relative flex-1 max-w-md">
+                    <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search your knowledge base..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-10"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button onClick={() => setAddDialogOpen(true)}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Content
+                    </Button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="px-6 py-6">
+                <div className="flex flex-col gap-6">
+
+                  {/* Toolbar with tags and view options */}
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {selectedTags.length > 0 && (
+                        <>
+                          <div className="text-sm text-muted-foreground">Filtered tags:</div>
+                          {selectedTags.map((t) => (
+                            <Badge key={t} variant="secondary" className="cursor-pointer" onClick={() => setSelectedTags(selectedTags.filter((x) => x !== t))}>
+                              {t}
+                            </Badge>
+                          ))}
+                          <Button variant="ghost" size="sm" onClick={() => setSelectedTags([])}>Clear all</Button>
+                        </>
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <Toggle
@@ -265,35 +299,16 @@ const Dashboard = () => {
                           <SelectItem value="title">Title</SelectItem>
                         </SelectContent>
                       </Select>
-                      <Button onClick={() => setAddDialogOpen(true)}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add Content
-                      </Button>
                     </div>
                   </div>
 
-                  {/* Selected tags row */}
-                  {selectedTags.length > 0 && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <div className="text-sm text-muted-foreground">Filtered tags:</div>
-                      {selectedTags.map((t) => (
-                        <Badge key={t} variant="secondary" className="cursor-pointer" onClick={() => setSelectedTags(selectedTags.filter((x) => x !== t))}>
-                          {t}
-                        </Badge>
-                      ))}
-                      <Button variant="ghost" size="sm" onClick={() => setSelectedTags([])}>Clear all</Button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Content area */}
-              {loading ? (
+                  {/* Cards area */}
+                  {loading ? (
                 <div className="text-center py-12">
                   <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
                   <p className="mt-4 text-muted-foreground">Loading your knowledge base...</p>
                 </div>
-              ) : filteredCards.length === 0 ? (
+                  ) : filteredCards.length === 0 ? (
                 <div className="text-center py-12">
                   <Brain className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
                   <h3 className="text-xl font-semibold mb-2">
@@ -311,7 +326,7 @@ const Dashboard = () => {
                     </Button>
                   )}
                 </div>
-              ) : (
+                  ) : (
                 <div className="flex flex-col gap-6">
                   {Object.entries(
                     filteredCards.reduce((acc: Record<string, any[]>, card) => {
@@ -320,7 +335,7 @@ const Dashboard = () => {
                       acc[key].push(card);
                       return acc;
                     }, {})
-                  ).map(([dateLabel, items]) => (
+                  ).map(([dateLabel, items]: [string, any[]]) => (
                     <div key={dateLabel} className="flex flex-col gap-3">
                       <div className="text-sm text-muted-foreground">{dateLabel}</div>
                       <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "flex flex-col gap-3"}>
@@ -343,8 +358,9 @@ const Dashboard = () => {
                     </div>
                   ))}
                 </div>
-              )}
-              <Separator className="my-8" />
+                  )}
+                </div>
+              </div>
             </SidebarInset>
           </div>
         </div>

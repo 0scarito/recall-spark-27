@@ -1,7 +1,6 @@
-import { Card } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ExternalLink, Calendar } from "lucide-react";
-import { format } from "date-fns";
+import { AspectRatio } from "@/components/ui/aspect-ratio";
 
 interface KnowledgeCardProps {
   title: string;
@@ -11,6 +10,7 @@ interface KnowledgeCardProps {
   contentType?: string;
   createdAt: string;
   onClick: () => void;
+  thumbnail?: string;
 }
 
 const KnowledgeCard = ({
@@ -21,48 +21,62 @@ const KnowledgeCard = ({
   contentType,
   createdAt,
   onClick,
+  thumbnail,
 }: KnowledgeCardProps) => {
+  // Extract image from URL using a placeholder service based on domain
+  const getPlaceholderImage = (url?: string) => {
+    if (!url) return null;
+    try {
+      const domain = new URL(url).hostname;
+      return `https://api.dicebear.com/7.x/shapes/svg?seed=${encodeURIComponent(domain)}&backgroundColor=1e293b`;
+    } catch {
+      return null;
+    }
+  };
+
+  const imageUrl = thumbnail || getPlaceholderImage(url);
+
   return (
     <Card
-      className="p-6 hover:shadow-lg hover:shadow-primary/10 transition-all cursor-pointer group bg-card/50 backdrop-blur-sm border-border/50"
+      className="group hover:shadow-xl transition-all duration-300 cursor-pointer border-border/50 bg-card overflow-hidden"
       onClick={onClick}
     >
-      <div className="flex items-start justify-between mb-4">
-        <h3 className="text-lg font-semibold group-hover:text-primary transition-colors line-clamp-2">
-          {title}
-        </h3>
-        {url && (
-          <ExternalLink className="w-4 h-4 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-        )}
-      </div>
-
-      {summary && (
-        <p className="text-sm text-muted-foreground mb-4 line-clamp-3">
-          {summary}
-        </p>
+      {imageUrl && (
+        <AspectRatio ratio={16 / 9} className="bg-muted/50">
+          <img
+            src={imageUrl}
+            alt={title}
+            className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-300"
+            onError={(e) => {
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+        </AspectRatio>
       )}
-
-      <div className="flex items-center justify-between">
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base line-clamp-2 group-hover:text-primary transition-colors">
+          {title}
+        </CardTitle>
+      </CardHeader>
+      {summary && (
+        <CardContent className="pb-4">
+          <CardDescription className="line-clamp-3 text-sm">
+            {summary}
+          </CardDescription>
+        </CardContent>
+      )}
+      <div className="px-6 pb-4">
         <div className="flex flex-wrap gap-2">
-          {contentType && (
-            <Badge variant="secondary" className="text-xs">
-              {contentType}
-            </Badge>
-          )}
-          {tags.slice(0, 3).map((tag, index) => (
-            <Badge key={index} variant="outline" className="text-xs">
+          {tags.filter((tag) => !tag.startsWith('collection:')).slice(0, 3).map((tag, idx) => (
+            <Badge key={idx} variant="secondary" className="text-xs">
               {tag}
             </Badge>
           ))}
-          {tags.length > 3 && (
-            <Badge variant="outline" className="text-xs">
-              +{tags.length - 3}
+          {tags.filter((tag) => !tag.startsWith('collection:')).length > 3 && (
+            <Badge variant="secondary" className="text-xs">
+              +{tags.filter((tag) => !tag.startsWith('collection:')).length - 3}
             </Badge>
           )}
-        </div>
-        <div className="flex items-center text-xs text-muted-foreground">
-          <Calendar className="w-3 h-3 mr-1" />
-          {format(new Date(createdAt), 'MMM d, yyyy')}
         </div>
       </div>
     </Card>
