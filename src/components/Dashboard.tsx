@@ -355,7 +355,16 @@ const Dashboard = () => {
           onSuccess={loadCards}
           initialUrl={prefillUrl}
         />
-        <CardDetailDrawer open={detailOpen} onOpenChange={setDetailOpen} card={selectedCard} />
+        <CardDetailDrawer
+          open={detailOpen}
+          onOpenChange={setDetailOpen}
+          card={selectedCard}
+          allCards={cards}
+          onSelectCard={(c) => {
+            setSelectedCard(c);
+            setDetailOpen(true);
+          }}
+        />
       </div>
     </SidebarProvider>
   );
