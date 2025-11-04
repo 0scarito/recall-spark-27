@@ -23,20 +23,9 @@ const AddContentDialog = ({ open, onOpenChange, onSuccess }: AddContentDialogPro
 
     setLoading(true);
     try {
-      // Fetch content from URL (in production, you'd use a proper scraping service)
-      const response = await fetch(url);
-      const html = await response.text();
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(html, 'text/html');
-      
-      // Extract title and basic content
-      const title = doc.querySelector('title')?.textContent || new URL(url).hostname;
-      const metaDescription = doc.querySelector('meta[name="description"]')?.getAttribute('content');
-      const contentText = doc.body.innerText.slice(0, 5000); // First 5000 chars
-
-      // Get AI summary
+      // Call edge function to fetch and summarize (server-side, no CORS issues)
       const { data: summaryData, error: summaryError } = await supabase.functions.invoke('summarize-content', {
-        body: { url, content: metaDescription || contentText }
+        body: { url }
       });
 
       if (summaryError) throw summaryError;
@@ -49,7 +38,7 @@ const AddContentDialog = ({ open, onOpenChange, onSuccess }: AddContentDialogPro
         .from('knowledge_cards')
         .insert({
           user_id: user.id,
-          title: title,
+          title: summaryData.title,
           url: url,
           summary: summaryData.summary,
           content_type: 'article',

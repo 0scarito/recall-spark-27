@@ -12,15 +12,44 @@ serve(async (req) => {
   }
 
   try {
-    const { url, content } = await req.json();
+    const { url } = await req.json();
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     
     if (!LOVABLE_API_KEY) {
       throw new Error('LOVABLE_API_KEY is not configured');
     }
 
-    console.log('Summarizing content from:', url);
+    console.log('Fetching and summarizing content from:', url);
 
+    // Fetch the actual content from the URL (server-side, no CORS issues)
+    const contentResponse = await fetch(url);
+    if (!contentResponse.ok) {
+      throw new Error(`Failed to fetch URL: ${contentResponse.statusText}`);
+    }
+    
+    const html = await contentResponse.text();
+    
+    // Extract title from HTML
+    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+    const title = titleMatch ? titleMatch[1].trim() : new URL(url).hostname;
+    
+    // Extract meta description
+    const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i);
+    const metaDescription = descMatch ? descMatch[1] : '';
+    
+    // Extract text content (simple approach - remove HTML tags)
+    const textContent = html
+      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 5000); // First 5000 chars
+
+    console.log('Extracted title:', title);
+    console.log('Content length:', textContent.length);
+
+    // Generate AI summary
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
@@ -36,7 +65,7 @@ serve(async (req) => {
           },
           {
             role: 'user',
-            content: `Summarize this content:\n\nURL: ${url}\n\nContent: ${content}`
+            content: `Summarize this content:\n\nTitle: ${title}\n\nURL: ${url}\n\nContent: ${metaDescription || textContent}`
           }
         ],
       }),
@@ -66,7 +95,7 @@ serve(async (req) => {
     console.log('Summary generated successfully');
 
     return new Response(
-      JSON.stringify({ summary }),
+      JSON.stringify({ summary, title }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
