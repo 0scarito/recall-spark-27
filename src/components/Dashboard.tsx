@@ -5,7 +5,14 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { Plus, Search, LogOut, Brain, Home, MessageSquare, Network, GraduationCap, Settings, ChevronLeft, List, ChevronDown } from "lucide-react";
+import { Plus, Search, LogOut, Brain, Home, MessageSquare, Network, GraduationCap, Settings, ChevronLeft, List, ChevronDown, Grid } from "lucide-react";
+import ChatInterface from "./ChatInterface";
+import ConnectionsGraph from "./ConnectionsGraph";
+import CollectionManager from "./CollectionManager";
+import DraggableCard from "./DraggableCard";
+import DroppableCollection from "./DroppableCollection";
+import { DndContext, DragEndEvent, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors, useDroppable } from "@dnd-kit/core";
+import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import KnowledgeCard from "./KnowledgeCard";
 import AddContentDialog from "./AddContentDialog";
 import { toast } from "sonner";
@@ -24,6 +31,14 @@ const Dashboard = () => {
   const [selectedCard, setSelectedCard] = useState<any | null>(null);
   const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
   const [prefillUrl, setPrefillUrl] = useState<string | undefined>(undefined);
+  const [activeView, setActiveView] = useState<"cards" | "chat" | "graph">("cards");
+  const [draggedCard, setDraggedCard] = useState<any | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 8 },
+    })
+  );
 
   const loadCards = async () => {
     try {
@@ -61,6 +76,61 @@ const Dashboard = () => {
   const handleSignOut = async () => {
     await supabase.auth.signOut();
     toast.success('Signed out successfully');
+  };
+
+  const handleCreateCollection = async (name: string) => {
+    // Collections are managed via tags, no DB change needed
+  };
+
+  const handleDeleteCollection = async (name: string) => {
+    // Remove collection tag from all cards
+    const cardsWithCollection = cards.filter((c) => {
+      const tags: string[] = Array.isArray(c.tags) ? c.tags : [];
+      return tags.includes(`collection:${name}`);
+    });
+
+    for (const card of cardsWithCollection) {
+      const newTags = card.tags.filter((t: string) => t !== `collection:${name}`);
+      await supabase.from('knowledge_cards').update({ tags: newTags }).eq('id', card.id);
+    }
+    
+    loadCards();
+  };
+
+  const handleDragStart = (event: any) => {
+    const card = cards.find((c) => c.id === event.active.id);
+    setDraggedCard(card);
+  };
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    setDraggedCard(null);
+
+    if (!over) return;
+
+    const cardId = active.id as string;
+    const targetCollection = over.id as string;
+
+    if (!targetCollection.startsWith("collection:")) return;
+
+    const card = cards.find((c) => c.id === cardId);
+    if (!card) return;
+
+    const currentTags: string[] = Array.isArray(card.tags) ? card.tags : [];
+    const withoutCollections = currentTags.filter((t) => !t.startsWith("collection:"));
+    const newTags = [...withoutCollections, targetCollection];
+
+    const { error } = await supabase
+      .from('knowledge_cards')
+      .update({ tags: newTags })
+      .eq('id', cardId);
+
+    if (error) {
+      toast.error("Failed to move card");
+    } else {
+      toast.success("Card moved to collection");
+      loadCards();
+    }
   };
 
   const availableTags = useMemo(() => {
@@ -124,17 +194,29 @@ const Dashboard = () => {
             <Brain className="w-6 h-6 text-primary-foreground" />
           </div>
           <nav className="flex flex-col items-center gap-2 flex-1">
-            <Button variant="ghost" size="icon" className="w-10 h-10 text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent">
-              <Home className="w-5 h-5" />
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className={`w-10 h-10 ${activeView === "cards" ? "bg-sidebar-accent text-sidebar-primary-foreground" : "text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent"}`}
+              onClick={() => setActiveView("cards")}
+            >
+              <Grid className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="w-10 h-10 text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className={`w-10 h-10 ${activeView === "chat" ? "bg-sidebar-accent text-sidebar-primary-foreground" : "text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent"}`}
+              onClick={() => setActiveView("chat")}
+            >
               <MessageSquare className="w-5 h-5" />
             </Button>
-            <Button variant="ghost" size="icon" className="w-10 h-10 text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent">
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className={`w-10 h-10 ${activeView === "graph" ? "bg-sidebar-accent text-sidebar-primary-foreground" : "text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent"}`}
+              onClick={() => setActiveView("graph")}
+            >
               <Network className="w-5 h-5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="w-10 h-10 text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent">
-              <GraduationCap className="w-5 h-5" />
             </Button>
           </nav>
           <div className="flex flex-col items-center gap-2">
@@ -158,18 +240,20 @@ const Dashboard = () => {
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
+                  <SidebarMenuItem>
+                    <CollectionManager
+                      collections={availableCollections}
+                      onCreateCollection={handleCreateCollection}
+                      onDeleteCollection={handleDeleteCollection}
+                    />
+                  </SidebarMenuItem>
                   {availableCollections.map((col) => (
                     <SidebarMenuItem key={col}>
-                      <SidebarMenuButton 
-                        asChild 
+                      <DroppableCollection
+                        collectionName={col}
                         isActive={selectedCollection === col}
-                        className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                      >
-                        <button onClick={() => setSelectedCollection(col)} className="w-full text-left capitalize">
-                          <ChevronDown className="w-4 h-4" />
-                          {col}
-                        </button>
-                      </SidebarMenuButton>
+                        onClick={() => setSelectedCollection(col)}
+                      />
                     </SidebarMenuItem>
                   ))}
                 </SidebarMenu>
@@ -180,14 +264,29 @@ const Dashboard = () => {
 
         {/* Main Content Area */}
         <SidebarInset className="flex-1 overflow-auto">
-          <div className="w-full">
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="w-full">
             {/* Top Bar */}
             <div className="border-b border-border px-6 py-4 flex items-center justify-between gap-4">
               <div className="flex-1 flex items-center gap-4">
+                <div className="relative flex-1 max-w-md">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search your knowledge..."
+                    className="pl-10 bg-card text-foreground border-border"
+                  />
+                </div>
                 {/* Filtered Tags */}
                 {selectedTags.length > 0 && (
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm text-muted-foreground">Filtered tags:</span>
+                    <span className="text-sm text-muted-foreground">Tags:</span>
                     {selectedTags.map((t) => (
                       <Badge 
                         key={t} 
@@ -211,9 +310,6 @@ const Dashboard = () => {
               </div>
               
               <div className="flex items-center gap-2">
-                <Button variant="ghost" size="icon">
-                  <Search className="w-5 h-5" />
-                </Button>
                 <Button onClick={() => setAddDialogOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90">
                   Add Content
                 </Button>
@@ -244,63 +340,110 @@ const Dashboard = () => {
             </div>
 
             {/* Content */}
-            <div className="px-6 py-6">
-              {loading ? (
-                <div className="text-center py-20">
-                  <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
-                  <p className="mt-4 text-muted-foreground">Loading...</p>
-                </div>
-              ) : filteredCards.length === 0 ? (
-                <div className="text-center py-20">
-                  <Brain className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="text-xl font-semibold mb-2">
-                    {searchQuery ? 'No results found' : 'Your knowledge base is empty'}
-                  </h3>
-                  <p className="text-muted-foreground mb-6">
-                    {searchQuery ? 'Try a different search' : 'Start by adding your first piece of content'}
-                  </p>
-                  {!searchQuery && (
-                    <Button onClick={() => setAddDialogOpen(true)}>
-                      <Plus className="w-4 h-4 mr-2" />
-                      Add Content
-                    </Button>
+            <div className="h-full">
+              {activeView === "chat" ? (
+                <ChatInterface />
+              ) : activeView === "graph" ? (
+                <div className="px-6 py-6 h-full flex flex-col">
+                  <div className="mb-4">
+                    <h2 className="text-xl font-semibold text-foreground">Knowledge Graph</h2>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Explore connections between your knowledge cards based on shared tags
+                    </p>
+                  </div>
+                  {selectedCard ? (
+                    <ConnectionsGraph 
+                      card={selectedCard} 
+                      allCards={cards}
+                      onSelectCard={(c) => {
+                        setSelectedCard(c);
+                        setDetailOpen(true);
+                      }}
+                    />
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center">
+                      <div className="text-center">
+                        <Network className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                        <p className="text-muted-foreground">
+                          Select a card to view its connections
+                        </p>
+                      </div>
+                    </div>
                   )}
                 </div>
               ) : (
-                <div className="space-y-8">
-                  {Object.entries(
-                    filteredCards.reduce((acc: Record<string, any[]>, card) => {
-                      const key = format(new Date(card.created_at), "EEE MMM dd yyyy");
-                      if (!acc[key]) acc[key] = [];
-                      acc[key].push(card);
-                      return acc;
-                    }, {})
-                  ).map(([dateLabel, items]: [string, any[]]) => (
-                    <div key={dateLabel} className="space-y-4">
-                      <h2 className="text-base font-medium text-foreground">{dateLabel}</h2>
-                      <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-4"}>
-                        {items.map((card) => (
-                          <KnowledgeCard
-                            key={card.id}
-                            title={card.title}
-                            summary={card.summary}
-                            url={card.url}
-                            tags={card.tags || []}
-                            contentType={card.content_type}
-                            createdAt={card.created_at}
-                            onClick={() => {
-                              setSelectedCard(card);
-                              setDetailOpen(true);
-                            }}
-                          />
+                <div className="px-6 py-6">
+                  {loading ? (
+                    <div className="text-center py-20">
+                      <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+                      <p className="mt-4 text-muted-foreground">Loading...</p>
+                    </div>
+                  ) : filteredCards.length === 0 ? (
+                    <div className="text-center py-20">
+                      <Brain className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                      <h3 className="text-xl font-semibold mb-2">
+                        {searchQuery ? 'No results found' : 'Your knowledge base is empty'}
+                      </h3>
+                      <p className="text-muted-foreground mb-6">
+                        {searchQuery ? 'Try a different search' : 'Start by adding your first piece of content'}
+                      </p>
+                      {!searchQuery && (
+                        <Button onClick={() => setAddDialogOpen(true)}>
+                          <Plus className="w-4 h-4 mr-2" />
+                          Add Content
+                        </Button>
+                      )}
+                    </div>
+                  ) : (
+                    <SortableContext items={filteredCards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+                      <div className="space-y-8">
+                        {Object.entries(
+                          filteredCards.reduce((acc: Record<string, any[]>, card) => {
+                            const key = format(new Date(card.created_at), "EEE MMM dd yyyy");
+                            if (!acc[key]) acc[key] = [];
+                            acc[key].push(card);
+                            return acc;
+                          }, {})
+                        ).map(([dateLabel, items]: [string, any[]]) => (
+                          <div key={dateLabel} className="space-y-4">
+                            <h2 className="text-base font-medium text-foreground">{dateLabel}</h2>
+                            <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-4"}>
+                              {items.map((card) => (
+                                <DraggableCard
+                                  key={card.id}
+                                  card={card}
+                                  onClick={() => {
+                                    setSelectedCard(card);
+                                    setDetailOpen(true);
+                                  }}
+                                />
+                              ))}
+                            </div>
+                          </div>
                         ))}
                       </div>
-                    </div>
-                  ))}
+                    </SortableContext>
+                  )}
                 </div>
               )}
             </div>
-          </div>
+            </div>
+            <DragOverlay>
+              {draggedCard ? (
+                <div className="opacity-80">
+                  <KnowledgeCard
+                    title={draggedCard.title}
+                    summary={draggedCard.summary}
+                    url={draggedCard.url}
+                    tags={draggedCard.tags || []}
+                    contentType={draggedCard.content_type}
+                    createdAt={draggedCard.created_at}
+                    onClick={() => {}}
+                  />
+                </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         </SidebarInset>
 
         <AddContentDialog
