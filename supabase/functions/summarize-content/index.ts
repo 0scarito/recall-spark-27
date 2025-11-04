@@ -61,11 +61,11 @@ serve(async (req) => {
         messages: [
           {
             role: 'system',
-            content: 'You are a knowledge assistant. Create concise, informative summaries of web content. Extract key insights and main points. Keep summaries under 200 words. Format with clear paragraphs.'
+            content: 'You are a knowledge assistant. Create concise, informative summaries of web content. Extract key insights and main points. Keep summaries under 200 words. Additionally, propose 3-6 topical tags (single or two-word phrases). Return JSON with keys: summary (string), tags (string[]).'
           },
           {
             role: 'user',
-            content: `Summarize this content:\n\nTitle: ${title}\n\nURL: ${url}\n\nContent: ${metaDescription || textContent}`
+            content: `Summarize and tag this content. Respond ONLY with JSON.\n\nTitle: ${title}\n\nURL: ${url}\n\nContent: ${metaDescription || textContent}`
           }
         ],
       }),
@@ -90,12 +90,34 @@ serve(async (req) => {
     }
 
     const data = await response.json();
-    const summary = data.choices[0].message.content;
+    const aiContent = data.choices[0].message.content;
+    let summary = '';
+    let tags: string[] = [];
+    try {
+      const parsed = JSON.parse(aiContent);
+      summary = parsed.summary || '';
+      if (Array.isArray(parsed.tags)) tags = parsed.tags.slice(0, 8).map((t: unknown) => String(t)).filter(Boolean);
+    } catch {
+      summary = aiContent;
+    }
+
+    // Fallback lightweight tag extraction if AI did not provide any
+    if (!tags.length) {
+      const source = `${title} ${metaDescription} ${textContent.slice(0, 1000)}`.toLowerCase();
+      const words = source.match(/[a-zA-Z][a-zA-Z\-]{2,}/g) || [];
+      const stop = new Set(["the","and","for","with","that","this","from","your","you","are","was","have","has","into","about","will","what","when","how","why","can","use","using","into","over","more","less","those","their","them","its","our","out","not","but","all","any","one","two","new","into","made","make"]);
+      const counts = new Map<string, number>();
+      for (const w of words) {
+        if (stop.has(w)) continue;
+        counts.set(w, (counts.get(w) || 0) + 1);
+      }
+      tags = Array.from(counts.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([w])=>w);
+    }
 
     console.log('Summary generated successfully');
 
     return new Response(
-      JSON.stringify({ summary, title }),
+      JSON.stringify({ summary, title, tags }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {

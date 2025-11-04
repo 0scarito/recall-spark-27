@@ -11,11 +11,17 @@ interface AddContentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
+  initialUrl?: string;
 }
 
-const AddContentDialog = ({ open, onOpenChange, onSuccess }: AddContentDialogProps) => {
+const AddContentDialog = ({ open, onOpenChange, onSuccess, initialUrl }: AddContentDialogProps) => {
   const [loading, setLoading] = useState(false);
   const [url, setUrl] = useState("");
+
+  // Sync initial URL when dialog opens or prop changes
+  if (open && initialUrl && url !== initialUrl) {
+    setUrl(initialUrl);
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -42,7 +48,7 @@ const AddContentDialog = ({ open, onOpenChange, onSuccess }: AddContentDialogPro
           url: url,
           summary: summaryData.summary,
           content_type: 'article',
-          tags: [],
+          tags: Array.isArray(summaryData.tags) ? summaryData.tags : [],
           metadata: {}
         });
 

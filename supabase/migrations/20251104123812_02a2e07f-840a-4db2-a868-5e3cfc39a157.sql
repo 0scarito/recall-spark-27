@@ -50,3 +50,14 @@ CREATE TRIGGER update_knowledge_cards_updated_at_trigger
   BEFORE UPDATE ON public.knowledge_cards
   FOR EACH ROW
   EXECUTE FUNCTION public.update_knowledge_cards_updated_at();
+
+-- Full-text search support
+ALTER TABLE public.knowledge_cards
+  ADD COLUMN IF NOT EXISTS search_vector tsvector GENERATED ALWAYS AS (
+    setweight(to_tsvector('english', coalesce(title, '')), 'A') ||
+    setweight(to_tsvector('english', coalesce(summary, '')), 'B') ||
+    setweight(to_tsvector('english', coalesce(url, '')), 'C')
+  ) STORED;
+
+CREATE INDEX IF NOT EXISTS knowledge_cards_search_vector_idx
+  ON public.knowledge_cards USING GIN (search_vector);
