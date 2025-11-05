@@ -5,9 +5,12 @@ import KnowledgeCard from "./KnowledgeCard";
 interface DraggableCardProps {
   card: any;
   onClick: () => void;
+  selectionEnabled?: boolean;
+  selected?: boolean;
+  onToggleSelect?: (id: string) => void;
 }
 
-const DraggableCard = ({ card, onClick }: DraggableCardProps) => {
+const DraggableCard = ({ card, onClick, selectionEnabled = false, selected = false, onToggleSelect }: DraggableCardProps) => {
   const {
     attributes,
     listeners,
@@ -24,7 +27,17 @@ const DraggableCard = ({ card, onClick }: DraggableCardProps) => {
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="relative">
+      {selectionEnabled && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onToggleSelect && onToggleSelect(card.id); }}
+          className={`absolute z-10 top-2 left-2 w-5 h-5 rounded border ${selected ? 'bg-primary border-primary' : 'bg-background border-border'} flex items-center justify-center`}
+          aria-pressed={selected}
+        >
+          {selected && <span className="w-3 h-3 bg-primary-foreground rounded-sm" />}
+        </button>
+      )}
       <KnowledgeCard
         title={card.title}
         summary={card.summary}
