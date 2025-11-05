@@ -10,6 +10,7 @@ import AddContentDialog from "./AddContentDialog";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import CardDetailDrawer from "./CardDetailDrawer";
+import { useNavigate } from "react-router-dom";
 import ChatInterface from "./ChatInterface";
 import ConnectionsGraph from "./ConnectionsGraph";
 import DraggableCard from "./DraggableCard";
@@ -26,6 +27,7 @@ const Dashboard = () => {
   const [orderBy, setOrderBy] = useState<"newest" | "oldest" | "title">("newest");
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<any | null>(null);
+  const navigate = useNavigate();
   const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
   const [prefillUrl, setPrefillUrl] = useState<string | undefined>(undefined);
   const [activeView, setActiveView] = useState<"cards" | "chat" | "graph">("cards");
@@ -322,8 +324,7 @@ const Dashboard = () => {
                                   key={card.id}
                                   card={card}
                                   onClick={() => {
-                                    setSelectedCard(card);
-                                    setDetailOpen(true);
+                                    navigate(`/card/${card.id}`);
                                   }}
                                 />
                               ))}

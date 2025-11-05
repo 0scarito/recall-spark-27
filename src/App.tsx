@@ -10,6 +10,7 @@ import Chat from "./pages/Chat";
 import Graph from "./pages/Graph";
 import Review from "./pages/Review";
 import Settings from "./pages/Settings";
+import Card from "./pages/Card";
 
 const queryClient = new QueryClient();
 
@@ -26,6 +27,7 @@ const App = () => (
           <Route path="/graph" element={<Graph />} />
           <Route path="/review" element={<Review />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/card/:id" element={<Card />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

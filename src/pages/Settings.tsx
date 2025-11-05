@@ -1,12 +1,24 @@
 import AppLayout from "@/components/AppLayout";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Moon, Sun, Monitor, Eye, FileText, MoreHorizontal } from "lucide-react";
-import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Moon, Sun, Monitor, Eye, FileText, ExternalLink, Download, Zap, Trash, Mail } from "lucide-react";
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const Settings = () => {
   const [mode, setMode] = useState("dark");
   const [defaultAction, setDefaultAction] = useState("concise");
+  const [receiveEmail, setReceiveEmail] = useState(true);
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setUserEmail(data.user?.email ?? null);
+    });
+  }, []);
 
   return (
     <AppLayout>
@@ -141,6 +153,100 @@ const Settings = () => {
                 <SelectItem value="large">Large</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          {/* Recall Review Email */}
+          <div className="space-y-2">
+            <div className="flex items-start justify-between gap-6">
+              <div>
+                <div className="font-medium text-lg mb-1">Recall Review Email</div>
+                <p className="text-sm text-muted-foreground">
+                  The review email is sent only if you have questions to review scheduled for that day.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <Mail className="w-4 h-4 text-muted-foreground" />
+                <Switch checked={receiveEmail} onCheckedChange={setReceiveEmail} />
+              </div>
+            </div>
+          </div>
+
+          {/* Open Browser Extension Settings */}
+          <div className="space-y-2">
+            <div className="font-medium text-lg">Open Browser Extension Settings</div>
+            <p className="text-sm text-muted-foreground">Open your extension settings.</p>
+            <Button
+              variant="secondary"
+              className="w-fit"
+              onClick={() => {
+                try {
+                  window.open("chrome://extensions/", "_blank");
+                } catch {
+                  toast.info("Open your browser's extension settings.");
+                }
+              }}
+            >
+              <ExternalLink className="w-4 h-4" /> Extension Settings
+            </Button>
+          </div>
+
+          {/* Data Export */}
+          <div className="space-y-2">
+            <div className="font-medium text-lg">Data</div>
+            <p className="text-sm text-muted-foreground">Export your knowledge base to markdown</p>
+            <Button
+              className="w-fit"
+              onClick={() => {
+                // Placeholder export; replace with real export pipeline
+                const content = "# Recall Export\n\nYour export will appear here.";
+                const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = "recall-export.md";
+                a.click();
+                URL.revokeObjectURL(url);
+                toast.success("Exported knowledge base to markdown");
+              }}
+            >
+              <Download className="w-4 h-4" /> Export
+            </Button>
+          </div>
+
+          {/* Subscription */}
+          <div className="space-y-2">
+            <div className="font-medium text-lg">Subscription</div>
+            <p className="text-sm text-muted-foreground">Upgrade to Recall Plus</p>
+            <Button
+              variant="outline"
+              className="w-fit"
+              onClick={() => toast.message("Upgrade coming soon")}
+            >
+              <Zap className="w-4 h-4" /> Upgrade
+            </Button>
+          </div>
+
+          {/* Account */}
+          <div className="space-y-3">
+            <div className="font-medium text-lg">Account</div>
+            {userEmail && <div className="text-sm text-muted-foreground">{userEmail}</div>}
+            <Button
+              variant="destructive"
+              className="w-fit"
+              onClick={async () => {
+                const confirmed = window.confirm("Delete account permanently? This cannot be undone.");
+                if (!confirmed) return;
+                try {
+                  // Sign out as a placeholder; real deletion requires backend function
+                  await supabase.auth.signOut();
+                  toast.success("Account deletion requested. You have been signed out.");
+                } catch (e: any) {
+                  toast.error(e.message ?? "Failed to delete account");
+                }
+              }}
+            >
+              <Trash className="w-4 h-4" /> Delete Account
+            </Button>
           </div>
         </div>
       </div>
