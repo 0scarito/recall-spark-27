@@ -4,8 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import { Plus, Search, LogOut, Brain, Home, MessageSquare, Network, GraduationCap, Settings, ChevronLeft, List, ChevronDown, Grid, Grid2X2 } from "lucide-react";
+import { Plus, Search, Brain, List, Grid2X2, Network } from "lucide-react";
 import KnowledgeCard from "./KnowledgeCard";
 import AddContentDialog from "./AddContentDialog";
 import { toast } from "sonner";
@@ -13,9 +12,7 @@ import { format } from "date-fns";
 import CardDetailDrawer from "./CardDetailDrawer";
 import ChatInterface from "./ChatInterface";
 import ConnectionsGraph from "./ConnectionsGraph";
-import CollectionManager from "./CollectionManager";
 import DraggableCard from "./DraggableCard";
-import DroppableCollection from "./DroppableCollection";
 import { DndContext, DragEndEvent, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors, useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 
@@ -73,29 +70,9 @@ const Dashboard = () => {
     }
   }, []);
 
-  const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    toast.success('Signed out successfully');
-  };
+  // Sign out is handled globally in AppLayout; keep Dashboard focused on content
 
-  const handleCreateCollection = async (name: string) => {
-    // Collections are managed via tags, no DB change needed
-  };
-
-  const handleDeleteCollection = async (name: string) => {
-    // Remove collection tag from all cards
-    const cardsWithCollection = cards.filter((c) => {
-      const tags: string[] = Array.isArray(c.tags) ? c.tags : [];
-      return tags.includes(`collection:${name}`);
-    });
-
-    for (const card of cardsWithCollection) {
-      const newTags = card.tags.filter((t: string) => t !== `collection:${name}`);
-      await supabase.from('knowledge_cards').update({ tags: newTags }).eq('id', card.id);
-    }
-    
-    loadCards();
-  };
+  // Collections side actions removed with the collections sidebar
 
   const handleDragStart = (event: any) => {
     const card = cards.find((c) => c.id === event.active.id);
@@ -186,84 +163,7 @@ const Dashboard = () => {
   }, [cards, searchQuery, selectedTags, selectedCollection, orderBy]);
 
   return (
-    <SidebarProvider>
-      <div className="min-h-screen flex w-full bg-background">
-        {/* Main Navigation Sidebar - Very narrow */}
-        <div className="w-16 bg-sidebar border-r border-sidebar-border flex flex-col items-center py-4 gap-4 shrink-0">
-          <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-primary to-primary-glow flex items-center justify-center mb-4">
-            <Brain className="w-6 h-6 text-primary-foreground" />
-          </div>
-          <nav className="flex flex-col items-center gap-2 flex-1">
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className={`w-10 h-10 ${activeView === "cards" ? "bg-sidebar-accent text-sidebar-primary-foreground" : "text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent"}`}
-              onClick={() => setActiveView("cards")}
-            >
-              <Grid className="w-5 h-5" />
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className={`w-10 h-10 ${activeView === "chat" ? "bg-sidebar-accent text-sidebar-primary-foreground" : "text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent"}`}
-              onClick={() => setActiveView("chat")}
-            >
-              <MessageSquare className="w-5 h-5" />
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              className={`w-10 h-10 ${activeView === "graph" ? "bg-sidebar-accent text-sidebar-primary-foreground" : "text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent"}`}
-              onClick={() => setActiveView("graph")}
-            >
-              <Network className="w-5 h-5" />
-            </Button>
-          </nav>
-          <div className="flex flex-col items-center gap-2">
-            <Button variant="ghost" size="icon" className="w-10 h-10 text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent">
-              <Settings className="w-5 h-5" />
-            </Button>
-            <Button variant="ghost" size="icon" className="w-10 h-10 text-sidebar-foreground hover:text-sidebar-primary-foreground hover:bg-sidebar-accent" onClick={handleSignOut}>
-              <LogOut className="w-5 h-5" />
-            </Button>
-          </div>
-        </div>
-
-        {/* Collections Sidebar - Collapsible */}
-        <Sidebar className="bg-sidebar border-r border-sidebar-border" collapsible="icon">
-          <SidebarHeader className="p-3 border-b border-sidebar-border">
-            <div className="flex items-center justify-between">
-              <SidebarTrigger className="text-sidebar-foreground" />
-            </div>
-          </SidebarHeader>
-          <SidebarContent>
-            <SidebarGroup>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <CollectionManager
-                      collections={availableCollections}
-                      onCreateCollection={handleCreateCollection}
-                      onDeleteCollection={handleDeleteCollection}
-                    />
-                  </SidebarMenuItem>
-                  {availableCollections.map((col) => (
-                    <SidebarMenuItem key={col}>
-                      <DroppableCollection
-                        collectionName={col}
-                        isActive={selectedCollection === col}
-                        onClick={() => setSelectedCollection(col)}
-                      />
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          </SidebarContent>
-        </Sidebar>
-
-        {/* Main Content Area */}
-        <SidebarInset className="flex-1 overflow-auto">
+    <div className="w-full">
           <DndContext
             sensors={sensors}
             collisionDetection={closestCenter}
@@ -453,8 +353,6 @@ const Dashboard = () => {
               ) : null}
             </DragOverlay>
           </DndContext>
-        </SidebarInset>
-
         <AddContentDialog
           open={addDialogOpen}
           onOpenChange={setAddDialogOpen}
@@ -471,8 +369,7 @@ const Dashboard = () => {
             setDetailOpen(true);
           }}
         />
-      </div>
-    </SidebarProvider>
+    </div>
   );
 };
 
