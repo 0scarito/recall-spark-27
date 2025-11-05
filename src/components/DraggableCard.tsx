@@ -27,16 +27,15 @@ const DraggableCard = ({ card, onClick, selectionEnabled = false, selected = fal
   };
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="relative">
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} className="relative group">
       {selectionEnabled && (
         <button
           type="button"
           onClick={(e) => { e.stopPropagation(); onToggleSelect && onToggleSelect(card.id); }}
-          className={`absolute z-10 top-2 left-2 w-5 h-5 rounded border ${selected ? 'bg-primary border-primary' : 'bg-background border-border'} flex items-center justify-center`}
+          className={`absolute z-10 top-2 left-2 w-4 h-4 rounded-sm border transition-opacity ${selected ? 'bg-primary border-primary opacity-100' : 'bg-white border-white/80 opacity-0 group-hover:opacity-100'}`}
           aria-pressed={selected}
-        >
-          {selected && <span className="w-3 h-3 bg-primary-foreground rounded-sm" />}
-        </button>
+          title={selected ? 'Selected' : 'Select'}
+        />
       )}
       <KnowledgeCard
         title={card.title}

@@ -33,6 +33,8 @@ const Dashboard = () => {
   const [activeView, setActiveView] = useState<"cards" | "chat" | "graph">("cards");
   const [draggedCard, setDraggedCard] = useState<any | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -165,6 +167,40 @@ const Dashboard = () => {
     return result;
   }, [cards, searchQuery, selectedTags, selectedCollection, orderBy]);
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const pinSelected = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    for (const id of ids) {
+      const card = cards.find((c) => c.id === id);
+      if (!card) continue;
+      const current: string[] = Array.isArray(card.tags) ? card.tags : [];
+      const next = current.includes('pinned') ? current : [...current, 'pinned'];
+      await supabase.from('knowledge_cards').update({ tags: next }).eq('id', id);
+    }
+    toast.success('Pinned selected cards');
+    clearSelection();
+    loadCards();
+  };
+
+  const deleteSelected = async () => {
+    const ids = Array.from(selectedIds);
+    if (ids.length === 0) return;
+    await supabase.from('knowledge_cards').delete().in('id', ids);
+    toast.success('Deleted selected cards');
+    clearSelection();
+    loadCards();
+  };
+
   return (
     <div className="w-full">
           <DndContext
@@ -220,7 +256,22 @@ const Dashboard = () => {
             </div>
 
             {/* Controls Bar */}
-            <div className="px-6 py-3 flex items-center justify-end gap-2 border-b border-border">
+            <div className="px-6 py-3 flex items-center justify-between gap-2 border-b border-border">
+              <div className="flex items-center gap-2">
+                <Button 
+                  variant={selectionMode ? "secondary" : "ghost"} 
+                  size="sm" 
+                  onClick={() => { setSelectionMode((v) => !v); clearSelection(); }}
+                >
+                  {selectionMode ? 'Cancel selection' : 'Select'}
+                </Button>
+                {selectionMode && selectedIds.size > 0 && (
+                  <>
+                    <Button size="sm" variant="outline" onClick={pinSelected}>Pin</Button>
+                    <Button size="sm" variant="destructive" onClick={deleteSelected}>Delete</Button>
+                  </>
+                )}
+              </div>
               <Button 
                 variant={viewMode === "list" ? "secondary" : "ghost"} 
                 size="sm"
@@ -364,6 +415,9 @@ const Dashboard = () => {
                                   onClick={() => {
                                     navigate(`/card/${card.id}`);
                                   }}
+                                  selectionEnabled={selectionMode}
+                                  selected={selectedIds.has(card.id)}
+                                  onToggleSelect={toggleSelect}
                                 />
                               ))}
                             </div>

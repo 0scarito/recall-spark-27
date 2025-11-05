@@ -53,6 +53,7 @@ const CardPage = () => {
   const navigate = useNavigate();
   const [cards, setCards] = useState<CardRow[]>([]);
   const [showReader, setShowReader] = useState(true);
+  const [activeTab, setActiveTab] = useState<string>("notebook");
 
   useEffect(() => {
     supabase
@@ -83,19 +84,24 @@ const CardPage = () => {
               ))}
             </div>
           </div>
-          {card?.url && (
-            <Button asChild variant="outline" size="sm">
-              <a href={card.url} target="_blank" rel="noreferrer">
-                Open source <ExternalLink className="w-4 h-4 ml-1" />
-              </a>
+          <div className="flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setShowReader((v) => !v)} title={showReader ? 'Hide reader' : 'Show reader'}>
+              {showReader ? (<><PanelRightClose className="w-4 h-4" /></>) : (<><PanelRightOpen className="w-4 h-4" /></>)}
             </Button>
-          )}
+            {card?.url && (
+              <Button asChild variant="outline" size="sm">
+                <a href={card.url} target="_blank" rel="noreferrer">
+                  Open source <ExternalLink className="w-4 h-4 ml-1" />
+                </a>
+              </Button>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Main center content */}
           <div className={showReader ? "lg:col-span-7" : "lg:col-span-12"}>
-            <Tabs defaultValue="notebook" className="w-full">
+            <Tabs defaultValue="notebook" className="w-full" onValueChange={(v)=>{ setActiveTab(v); if (v === 'reader') setShowReader(true); }}>
               <TabsList className="w-full flex flex-wrap">
                 <TabsTrigger value="reader" className="hidden lg:inline-flex">Reader</TabsTrigger>
                 <TabsTrigger value="notebook">Notebook</TabsTrigger>
@@ -105,7 +111,7 @@ const CardPage = () => {
                 <TabsTrigger value="graph">Graph</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="reader" className="mt-4 lg:hidden">
+              <TabsContent value="reader" className={`mt-4 ${showReader ? 'lg:hidden' : ''}`}>
                 <ReaderPane card={card} />
               </TabsContent>
 
@@ -163,12 +169,6 @@ const CardPage = () => {
 
           {/* Reader right column */}
           <div className={showReader ? "lg:col-span-5" : "hidden lg:block lg:col-span-5"}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="text-sm text-muted-foreground">Reader</div>
-              <Button variant="ghost" size="icon" onClick={() => setShowReader(!showReader)}>
-                {showReader ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
-              </Button>
-            </div>
             {showReader && (
               <UICard>
                 <CardContent className="pt-4">
