@@ -33,6 +33,10 @@ const DraggableCard = ({ card, onClick }: DraggableCardProps) => {
         contentType={card.content_type}
         createdAt={card.created_at}
         onClick={onClick}
+        thumbnail={card.content_type === 'youtube' ? (function(){
+          const m = (card.url || '').match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+          return m ? `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg` : (card.metadata?.image || undefined);
+        })() : (card?.metadata?.image || undefined)}
       />
     </div>
   );

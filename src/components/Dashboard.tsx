@@ -32,6 +32,7 @@ const Dashboard = () => {
   const [prefillUrl, setPrefillUrl] = useState<string | undefined>(undefined);
   const [activeView, setActiveView] = useState<"cards" | "chat" | "graph">("cards");
   const [draggedCard, setDraggedCard] = useState<any | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -251,7 +252,44 @@ const Dashboard = () => {
             </div>
 
             {/* Content */}
-            <div className="h-full">
+            <div className="h-full flex">
+              {sidebarOpen ? (
+                <aside className="hidden md:block w-64 border-r border-border p-4 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-foreground">Collections</h3>
+                    <Button size="sm" variant="ghost" onClick={() => setSidebarOpen(false)}>Hide</Button>
+                  </div>
+                  <div className="space-y-1">
+                    <Button
+                      key="all"
+                      variant={!selectedCollection ? 'secondary' : 'ghost'}
+                      className="w-full justify-start"
+                      onClick={() => setSelectedCollection(null)}
+                    >All</Button>
+                    {availableCollections.map((c) => (
+                      <Button key={c} variant={selectedCollection === c ? 'secondary' : 'ghost'} className="w-full justify-start" onClick={() => setSelectedCollection(c)}>
+                        {c}
+                      </Button>
+                    ))}
+                  </div>
+                  <div className="pt-4">
+                    <h3 className="text-sm font-semibold text-foreground mb-2">Tags</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {availableTags.slice(0, 40).map((t) => (
+                        <Badge key={t} className="cursor-pointer" onClick={() => setSelectedTags(Array.from(new Set([...selectedTags, t])))}>
+                          {t}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </aside>
+              ) : (
+                <div className="hidden md:flex flex-col items-center justify-start px-2 border-r border-border">
+                  <Button size="sm" variant="ghost" onClick={() => setSidebarOpen(true)}>Show</Button>
+                </div>
+              )}
+
+              <div className="flex-1">
               {activeView === "chat" ? (
                 <ChatInterface />
               ) : activeView === "graph" ? (
@@ -336,6 +374,7 @@ const Dashboard = () => {
                   )}
                 </div>
               )}
+              </div>
             </div>
             </div>
             <DragOverlay>
@@ -349,6 +388,10 @@ const Dashboard = () => {
                     contentType={draggedCard.content_type}
                     createdAt={draggedCard.created_at}
                     onClick={() => {}}
+                    thumbnail={draggedCard.content_type === 'youtube' ? (function(){
+                      const m = (draggedCard.url || '').match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+                      return m ? `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg` : (draggedCard.metadata?.image || undefined);
+                    })() : (draggedCard?.metadata?.image || undefined)}
                   />
                 </div>
               ) : null}

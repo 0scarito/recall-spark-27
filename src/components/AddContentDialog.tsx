@@ -54,7 +54,10 @@ const AddContentDialog = ({ open, onOpenChange, onSuccess, initialUrl }: AddCont
           content_type: contentType,
           tags: Array.isArray(summaryData.tags) ? summaryData.tags : [],
           metadata: {
-            image: summaryData.meta?.ogImage || summaryData.meta?.favicon || null,
+            image: (isYouTube ? (function(){
+              const m = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+              return m ? `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg` : null;
+            })() : null) || summaryData.meta?.ogImage || summaryData.meta?.favicon || null,
             siteName: summaryData.meta?.siteName || null,
             text: summaryData.text || null,
           }

@@ -34,7 +34,18 @@ const KnowledgeCard = ({
     }
   };
 
-  const imageUrl = thumbnail || getPlaceholderImage(url);
+  const getYouTubeId = (link?: string) => {
+    if (!link) return null;
+    const m = link.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+    return m ? m[1] : null;
+  };
+
+  const youTubeThumb = contentType === "youtube" ? (() => {
+    const id = getYouTubeId(url);
+    return id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : null;
+  })() : null;
+
+  const imageUrl = youTubeThumb || thumbnail || getPlaceholderImage(url);
 
   return (
     <Card
