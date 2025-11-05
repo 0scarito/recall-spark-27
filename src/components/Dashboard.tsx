@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { supabase } from "@/integrations/supabase/client";
+// Remplace les appels Supabase par le stockage local
+import { loadCards as loadLocalCards, updateCardTags, deleteCards as deleteLocalCards } from "@/lib/storage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -44,16 +45,9 @@ const Dashboard = () => {
 
   const loadCards = async () => {
     try {
-      let query = supabase.from('knowledge_cards').select('*');
-      if (searchQuery.trim().length > 0) {
-        // Use Postgres FTS when searching
-        query = (query as any).textSearch('search_vector', searchQuery);
-      }
-      const { data, error } = await (query as any).order('created_at', { ascending: false });
-
-      if (error) throw error;
+      const data = await loadLocalCards();
       setCards(data || []);
-    } catch (error: any) {
+    } catch {
       toast.error('Failed to load cards');
     } finally {
       setLoading(false);
@@ -102,16 +96,12 @@ const Dashboard = () => {
     const withoutCollections = currentTags.filter((t) => !t.startsWith("collection:"));
     const newTags = [...withoutCollections, targetCollection];
 
-    const { error } = await supabase
-      .from('knowledge_cards')
-      .update({ tags: newTags })
-      .eq('id', cardId);
-
-    if (error) {
-      toast.error("Failed to move card");
-    } else {
+    try {
+      await updateCardTags(cardId, newTags);
       toast.success("Card moved to collection");
       loadCards();
+    } catch {
+      toast.error("Failed to move card");
     }
   };
 
@@ -185,7 +175,7 @@ const Dashboard = () => {
       if (!card) continue;
       const current: string[] = Array.isArray(card.tags) ? card.tags : [];
       const next = current.includes('pinned') ? current : [...current, 'pinned'];
-      await supabase.from('knowledge_cards').update({ tags: next }).eq('id', id);
+      await updateCardTags(id, next);
     }
     toast.success('Pinned selected cards');
     clearSelection();
@@ -195,7 +185,7 @@ const Dashboard = () => {
   const deleteSelected = async () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
-    await supabase.from('knowledge_cards').delete().in('id', ids);
+    await deleteLocalCards(ids);
     toast.success('Deleted selected cards');
     clearSelection();
     loadCards();

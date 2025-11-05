@@ -1,6 +1,6 @@
 import AppLayout from "@/components/AppLayout";
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { loadCards as loadLocalCards } from "@/lib/storage";
 import ConnectionsGraph from "@/components/ConnectionsGraph";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Card, CardContent } from "@/components/ui/card";
@@ -20,14 +20,10 @@ const Graph = () => {
   const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
 
   useEffect(() => {
-    supabase
-      .from("knowledge_cards")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => {
-        setCards(data || []);
-        if (!selectedId && data && data.length) setSelectedId(data[0].id);
-      });
+    loadLocalCards().then((data) => {
+      setCards(data || []);
+      if (!selectedId && data && data.length) setSelectedId(data[0].id);
+    });
   }, []);
 
   const selectedCard = useMemo(() => cards.find((c) => c.id === selectedId) || null, [cards, selectedId]);

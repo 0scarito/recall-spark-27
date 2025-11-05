@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
+import { createCard } from "@/lib/storage";
 import { Loader2, Link as LinkIcon } from "lucide-react";
 
 interface AddContentDialogProps {
@@ -29,41 +30,35 @@ const AddContentDialog = ({ open, onOpenChange, onSuccess, initialUrl }: AddCont
 
     setLoading(true);
     try {
-      // Call edge function to fetch and summarize (server-side, no CORS issues)
-      const { data: summaryData, error: summaryError } = await supabase.functions.invoke('summarize-content', {
-        body: { url }
+      // Appel vers l'API Lovable Cloud
+      const res = await fetch('/api/fetch-summarize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
       });
+      if (!res.ok) throw new Error('Failed to summarize');
+      const summaryData = await res.json();
 
-      if (summaryError) throw summaryError;
-
-      // Save to database
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
-
-      // infer content type (very light)
       const isYouTube = /(?:youtube\.com|youtu\.be)\//i.test(url);
       const contentType = isYouTube ? 'youtube' : 'article';
 
-      const { error: insertError } = await supabase
-        .from('knowledge_cards')
-        .insert({
-          user_id: user.id,
-          title: summaryData.title,
-          url: url,
-          summary: summaryData.summary,
-          content_type: contentType,
-          tags: Array.isArray(summaryData.tags) ? summaryData.tags : [],
-          metadata: {
-            image: (isYouTube ? (function(){
-              const m = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
-              return m ? `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg` : null;
-            })() : null) || summaryData.meta?.ogImage || summaryData.meta?.favicon || null,
-            siteName: summaryData.meta?.siteName || null,
-            text: summaryData.text || null,
-          }
-        });
-
-      if (insertError) throw insertError;
+      await createCard({
+        id: crypto.randomUUID(),
+        title: summaryData.title,
+        url,
+        summary: summaryData.summary,
+        content_type: contentType,
+        tags: Array.isArray(summaryData.tags) ? summaryData.tags : [],
+        metadata: {
+          image: (isYouTube ? (function(){
+            const m = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+            return m ? `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg` : null;
+          })() : null) || summaryData.meta?.ogImage || summaryData.meta?.favicon || null,
+          siteName: summaryData.meta?.siteName || null,
+          text: summaryData.text || null,
+        },
+        created_at: new Date().toISOString(),
+      });
 
       toast.success('Content added successfully!');
       setUrl("");

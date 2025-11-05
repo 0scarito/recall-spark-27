@@ -1,7 +1,7 @@
 import AppLayout from "@/components/AppLayout";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { supabase } from "@/integrations/supabase/client";
+import { loadCards as loadLocalCards } from "@/lib/storage";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -56,11 +56,7 @@ const CardPage = () => {
   const [activeTab, setActiveTab] = useState<string>("notebook");
 
   useEffect(() => {
-    supabase
-      .from("knowledge_cards")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .then(({ data }) => setCards((data || []) as CardRow[]));
+    loadLocalCards().then((data) => setCards((data || []) as CardRow[]));
   }, []);
 
   const card = useMemo(() => cards.find((c) => c.id === id) || null, [cards, id]);
