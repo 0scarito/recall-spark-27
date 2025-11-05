@@ -1,57 +1,61 @@
 import AppLayout from "@/components/AppLayout";
+import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import ConnectionsGraph from "@/components/ConnectionsGraph";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Card, CardContent } from "@/components/ui/card";
+
+type CardRow = {
+  id: string;
+  title: string;
+  summary?: string;
+  tags?: string[];
+  created_at: string;
+  content_type?: string;
+  url?: string;
+};
 
 const Graph = () => {
+  const [cards, setCards] = useState<CardRow[]>([]);
+  const [selectedId, setSelectedId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    supabase
+      .from("knowledge_cards")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .then(({ data }) => {
+        setCards(data || []);
+        if (!selectedId && data && data.length) setSelectedId(data[0].id);
+      });
+  }, []);
+
+  const selectedCard = useMemo(() => cards.find((c) => c.id === selectedId) || null, [cards, selectedId]);
+
   return (
     <AppLayout>
-      <div className="relative min-h-[calc(100vh-200px)] w-full overflow-hidden">
-        {/* Abstract graph elements */}
-        <svg className="absolute inset-0 w-full h-full" viewBox="0 0 1200 800">
-          {/* Top right cluster - X shape */}
-          <g transform="translate(900, 100)">
-            <circle cx="0" cy="0" r="4" fill="#60a5fa" />
-            <circle cx="30" cy="-30" r="4" fill="#60a5fa" />
-            <circle cx="-30" cy="30" r="4" fill="#60a5fa" />
-            <circle cx="30" cy="30" r="4" fill="#60a5fa" />
-            <circle cx="-30" cy="-30" r="4" fill="#60a5fa" />
-            <line x1="0" y1="0" x2="30" y2="-30" stroke="#60a5fa" strokeWidth="1" opacity="0.5" />
-            <line x1="0" y1="0" x2="-30" y2="30" stroke="#60a5fa" strokeWidth="1" opacity="0.5" />
-            <line x1="0" y1="0" x2="30" y2="30" stroke="#60a5fa" strokeWidth="1" opacity="0.5" />
-            <line x1="0" y1="0" x2="-30" y2="-30" stroke="#60a5fa" strokeWidth="1" opacity="0.5" />
-          </g>
+      <div className="px-6 py-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="text-sm text-muted-foreground">Select a card:</div>
+          <Select value={selectedId} onValueChange={(v) => setSelectedId(v)}>
+            <SelectTrigger className="w-[320px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {cards.map((c) => (
+                <SelectItem key={c.id} value={c.id}>
+                  {c.title || c.url || c.id}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
 
-          {/* Top middle single dot */}
-          <circle cx="600" cy="150" r="4" fill="#60a5fa" />
-
-          {/* Middle left cluster - X shape */}
-          <g transform="translate(200, 350)">
-            <circle cx="0" cy="0" r="4" fill="#60a5fa" />
-            <circle cx="30" cy="-30" r="4" fill="#60a5fa" />
-            <circle cx="-30" cy="30" r="4" fill="#60a5fa" />
-            <circle cx="30" cy="30" r="4" fill="#60a5fa" />
-            <circle cx="-30" cy="-30" r="4" fill="#60a5fa" />
-            <line x1="0" y1="0" x2="30" y2="-30" stroke="#60a5fa" strokeWidth="1" opacity="0.5" />
-            <line x1="0" y1="0" x2="-30" y2="30" stroke="#60a5fa" strokeWidth="1" opacity="0.5" />
-            <line x1="0" y1="0" x2="30" y2="30" stroke="#60a5fa" strokeWidth="1" opacity="0.5" />
-            <line x1="0" y1="0" x2="-30" y2="-30" stroke="#60a5fa" strokeWidth="1" opacity="0.5" />
-          </g>
-
-          {/* Bottom middle starburst/dandelion */}
-          <g transform="translate(600, 600)">
-            <circle cx="0" cy="0" r="6" fill="#60a5fa" />
-            {Array.from({ length: 12 }).map((_, i) => {
-              const angle = (i * 360) / 12;
-              const rad = (angle * Math.PI) / 180;
-              const x = Math.cos(rad) * 50;
-              const y = Math.sin(rad) * 50;
-              return (
-                <g key={i}>
-                  <circle cx={x} cy={y} r="3" fill="#60a5fa" />
-                  <line x1="0" y1="0" x2={x} y2={y} stroke="#60a5fa" strokeWidth="1" opacity="0.4" />
-                </g>
-              );
-            })}
-          </g>
-        </svg>
+        <Card>
+          <CardContent className="pt-6">
+            <ConnectionsGraph card={selectedCard} allCards={cards} onSelectCard={(c) => c && setSelectedId(c.id)} />
+          </CardContent>
+        </Card>
       </div>
     </AppLayout>
   );
