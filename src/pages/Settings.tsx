@@ -7,21 +7,19 @@ import { Moon, Sun, Monitor, Eye, FileText, ExternalLink, Download, Zap, Trash, 
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-
 const Settings = () => {
   const [mode, setMode] = useState("dark");
   const [defaultAction, setDefaultAction] = useState("concise");
   const [receiveEmail, setReceiveEmail] = useState(true);
   const [userEmail, setUserEmail] = useState<string | null>(null);
-
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
+    supabase.auth.getUser().then(({
+      data
+    }) => {
       setUserEmail(data.user?.email ?? null);
     });
   }, []);
-
-  return (
-    <AppLayout>
+  return <AppLayout>
       <div className="max-w-3xl p-8">
         <h1 className="text-4xl font-bold mb-8">My Settings</h1>
 
@@ -29,12 +27,8 @@ const Settings = () => {
           {/* Mode */}
           <div className="space-y-4">
             <div className="font-medium text-lg">Mode</div>
-            <ToggleGroup type="single" value={mode} onValueChange={(v) => v && setMode(v)}>
-              <ToggleGroupItem
-                value="dark"
-                aria-label="Dark mode"
-                className="data-[state=on]:bg-accent data-[state=on]:text-accent-foreground"
-              >
+            <ToggleGroup type="single" value={mode} onValueChange={v => v && setMode(v)}>
+              <ToggleGroupItem value="dark" aria-label="Dark mode" className="data-[state=on]:bg-accent data-[state=on]:text-accent-foreground">
                 <Moon className="w-4 h-4 mr-2" />
                 Dark
               </ToggleGroupItem>
@@ -57,20 +51,12 @@ const Settings = () => {
                 Choose the default action for the content you add to Recall.
               </p>
             </div>
-            <ToggleGroup
-              type="single"
-              value={defaultAction}
-              onValueChange={(v) => v && setDefaultAction(v)}
-            >
+            <ToggleGroup type="single" value={defaultAction} onValueChange={v => v && setDefaultAction(v)}>
               <ToggleGroupItem value="reader" aria-label="Open reader">
                 <Eye className="w-4 h-4 mr-2" />
                 Open reader
               </ToggleGroupItem>
-              <ToggleGroupItem
-                value="concise"
-                aria-label="Concise summary"
-                className="data-[state=on]:bg-primary data-[state=on]:text-primary-foreground"
-              >
+              <ToggleGroupItem value="concise" aria-label="Concise summary" className="data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">
                 <FileText className="w-4 h-4 mr-2" />
                 Concise summary
               </ToggleGroupItem>
@@ -175,17 +161,13 @@ const Settings = () => {
           <div className="space-y-2">
             <div className="font-medium text-lg">Open Browser Extension Settings</div>
             <p className="text-sm text-muted-foreground">Open your extension settings.</p>
-            <Button
-              variant="secondary"
-              className="w-fit"
-              onClick={() => {
-                try {
-                  window.open("chrome://extensions/", "_blank");
-                } catch {
-                  toast.info("Open your browser's extension settings.");
-                }
-              }}
-            >
+            <Button variant="secondary" className="w-fit" onClick={() => {
+            try {
+              window.open("chrome://extensions/", "_blank");
+            } catch {
+              toast.info("Open your browser's extension settings.");
+            }
+          }}>
               <ExternalLink className="w-4 h-4" /> Extension Settings
             </Button>
           </div>
@@ -194,66 +176,47 @@ const Settings = () => {
           <div className="space-y-2">
             <div className="font-medium text-lg">Data</div>
             <p className="text-sm text-muted-foreground">Export your knowledge base to markdown</p>
-            <Button
-              className="w-fit"
-              onClick={() => {
-                // Placeholder export; replace with real export pipeline
-                const content = "# Recall Export\n\nYour export will appear here.";
-                const blob = new Blob([content], { type: "text/markdown;charset=utf-8" });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = "recall-export.md";
-                a.click();
-                URL.revokeObjectURL(url);
-                toast.success("Exported knowledge base to markdown");
-              }}
-            >
+            <Button className="w-fit" onClick={() => {
+            // Placeholder export; replace with real export pipeline
+            const content = "# Recall Export\n\nYour export will appear here.";
+            const blob = new Blob([content], {
+              type: "text/markdown;charset=utf-8"
+            });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "recall-export.md";
+            a.click();
+            URL.revokeObjectURL(url);
+            toast.success("Exported knowledge base to markdown");
+          }}>
               <Download className="w-4 h-4" /> Export
             </Button>
           </div>
 
           {/* Subscription */}
-          <div className="space-y-2">
-            <div className="font-medium text-lg">Subscription</div>
-            <p className="text-sm text-muted-foreground">Upgrade to Recall Plus</p>
-            <Button
-              variant="outline"
-              className="w-fit"
-              onClick={() => toast.message("Upgrade coming soon")}
-            >
-              <Zap className="w-4 h-4" /> Upgrade
-            </Button>
-          </div>
+          
 
           {/* Account */}
           <div className="space-y-3">
             <div className="font-medium text-lg">Account</div>
             {userEmail && <div className="text-sm text-muted-foreground">{userEmail}</div>}
-            <Button
-              variant="destructive"
-              className="w-fit"
-              onClick={async () => {
-                const confirmed = window.confirm("Delete account permanently? This cannot be undone.");
-                if (!confirmed) return;
-                try {
-                  // Sign out as a placeholder; real deletion requires backend function
-                  await supabase.auth.signOut();
-                  toast.success("Account deletion requested. You have been signed out.");
-                } catch (e: any) {
-                  toast.error(e.message ?? "Failed to delete account");
-                }
-              }}
-            >
+            <Button variant="destructive" className="w-fit" onClick={async () => {
+            const confirmed = window.confirm("Delete account permanently? This cannot be undone.");
+            if (!confirmed) return;
+            try {
+              // Sign out as a placeholder; real deletion requires backend function
+              await supabase.auth.signOut();
+              toast.success("Account deletion requested. You have been signed out.");
+            } catch (e: any) {
+              toast.error(e.message ?? "Failed to delete account");
+            }
+          }}>
               <Trash className="w-4 h-4" /> Delete Account
             </Button>
           </div>
         </div>
       </div>
-    </AppLayout>
-  );
+    </AppLayout>;
 };
-
 export default Settings;
-
-
