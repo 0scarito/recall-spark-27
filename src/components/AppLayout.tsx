@@ -2,7 +2,7 @@ import { ReactNode } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Sidebar, SidebarContent, SidebarFooter, SidebarGroup, SidebarGroupContent, SidebarGroupLabel, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
-import { Brain, Home, MessageSquare, Share2, GraduationCap, Settings } from "lucide-react";
+import { Brain, Home, Sparkles, Network, GraduationCap, Settings } from "lucide-react";
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -54,14 +54,14 @@ const AppLayout = ({ children, onSignOut }: AppLayoutProps) => {
                     <SidebarMenuItem>
                       <SidebarMenuButton asChild isActive={isActive("/chat")}>
                         <Link to="/chat" className="w-full text-left flex items-center gap-2">
-                          <MessageSquare className="w-4 h-4" /> Chat
+                          <Sparkles className="w-4 h-4" /> Chat
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                     <SidebarMenuItem>
                       <SidebarMenuButton asChild isActive={isActive("/graph")}>
                         <Link to="/graph" className="w-full text-left flex items-center gap-2">
-                          <Share2 className="w-4 h-4" /> Graph
+                          <Network className="w-4 h-4" /> Graph
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
