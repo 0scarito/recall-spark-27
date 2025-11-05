@@ -1,7 +1,7 @@
 import AppLayout from "@/components/AppLayout";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Moon, Sun, Monitor, Eye, FileText } from "lucide-react";
+import { Moon, Sun, Monitor, Eye, FileText, MoreHorizontal } from "lucide-react";
 import { useState } from "react";
 
 const Settings = () => {
@@ -10,7 +10,7 @@ const Settings = () => {
 
   return (
     <AppLayout>
-      <div className="max-w-3xl">
+      <div className="max-w-3xl p-8">
         <h1 className="text-4xl font-bold mb-8">My Settings</h1>
 
         <div className="space-y-8">

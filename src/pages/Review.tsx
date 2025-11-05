@@ -8,7 +8,7 @@ import { HelpCircle } from "lucide-react";
 const Review = () => {
   return (
     <AppLayout>
-      <div className="max-w-5xl">
+      <div className="max-w-5xl p-8">
         {/* Top tabs bar */}
         <div className="border-b border-border mb-6">
           <Tabs defaultValue="review" className="w-full">
