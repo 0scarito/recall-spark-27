@@ -1,7 +1,7 @@
 import AppLayout from "@/components/AppLayout";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Moon, Sun, Monitor, Eye, FileText, FileTextMore, Globe } from "lucide-react";
+import { Moon, Sun, Monitor, Eye, FileText } from "lucide-react";
 import { useState } from "react";
 
 const Settings = () => {
@@ -63,7 +63,7 @@ const Settings = () => {
                 Concise summary
               </ToggleGroupItem>
               <ToggleGroupItem value="detailed" aria-label="Detailed summary">
-                <FileTextMore className="w-4 h-4 mr-2" />
+                <FileText className="w-4 h-4 mr-2" />
                 Detailed summary
               </ToggleGroupItem>
             </ToggleGroup>
