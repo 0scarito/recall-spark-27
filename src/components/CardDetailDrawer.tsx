@@ -2,7 +2,7 @@ import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, PanelRightClose } from "lucide-react";
 import ConnectionsGraph from "./ConnectionsGraph";
 
 interface CardDetailDrawerProps {
@@ -30,14 +30,38 @@ const CardDetailDrawer = ({ open, onOpenChange, card, allCards = [], onSelectCar
           </SheetDescription>
         </SheetHeader>
 
-        <Tabs defaultValue="notebook" className="mt-4">
-          <TabsList className="grid grid-cols-5 w-full">
+        <Tabs defaultValue="reader" className="mt-4">
+          <TabsList className="grid grid-cols-6 w-full">
+            <TabsTrigger value="reader">Reader</TabsTrigger>
             <TabsTrigger value="notebook">Notebook</TabsTrigger>
             <TabsTrigger value="chat">Chat</TabsTrigger>
             <TabsTrigger value="quiz">Quiz</TabsTrigger>
             <TabsTrigger value="connections">Connections</TabsTrigger>
             <TabsTrigger value="graph">Graph</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="reader" className="mt-4 space-y-3">
+            {card?.content_type === 'youtube' ? (
+              <div className="aspect-video w-full rounded-md overflow-hidden border">
+                <iframe
+                  src={`https://www.youtube.com/embed/${extractYouTubeId(card.url)}`}
+                  className="w-full h-full"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              </div>
+            ) : card?.metadata?.image ? (
+              <img src={card.metadata.image} alt={card?.title || ''} className="w-full rounded-md border" />
+            ) : null}
+            {card?.metadata?.text && (
+              <div className="prose prose-invert max-w-none text-sm leading-6 whitespace-pre-wrap">
+                {card.metadata.text}
+              </div>
+            )}
+            {!card?.metadata?.text && (
+              <p className="text-sm text-muted-foreground">No reader content available.</p>
+            )}
+          </TabsContent>
 
           <TabsContent value="notebook" className="mt-4">
             {card?.summary && (
@@ -103,5 +127,11 @@ const ConnectionsList = ({ card, allCards, onSelectCard }: ConnectionsListProps)
     </div>
   );
 };
+
+function extractYouTubeId(url?: string) {
+  if (!url) return "";
+  const m = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+  return m ? m[1] : "";
+}
 
 

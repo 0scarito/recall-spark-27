@@ -40,6 +40,10 @@ const AddContentDialog = ({ open, onOpenChange, onSuccess, initialUrl }: AddCont
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Not authenticated');
 
+      // infer content type (very light)
+      const isYouTube = /(?:youtube\.com|youtu\.be)\//i.test(url);
+      const contentType = isYouTube ? 'youtube' : 'article';
+
       const { error: insertError } = await supabase
         .from('knowledge_cards')
         .insert({
@@ -47,9 +51,13 @@ const AddContentDialog = ({ open, onOpenChange, onSuccess, initialUrl }: AddCont
           title: summaryData.title,
           url: url,
           summary: summaryData.summary,
-          content_type: 'article',
+          content_type: contentType,
           tags: Array.isArray(summaryData.tags) ? summaryData.tags : [],
-          metadata: {}
+          metadata: {
+            image: summaryData.meta?.ogImage || summaryData.meta?.favicon || null,
+            siteName: summaryData.meta?.siteName || null,
+            text: summaryData.text || null,
+          }
         });
 
       if (insertError) throw insertError;

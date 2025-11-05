@@ -36,6 +36,14 @@ serve(async (req) => {
     // Extract meta description
     const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i);
     const metaDescription = descMatch ? descMatch[1] : '';
+
+    // Extract OG image / site name / favicon
+    const ogImageMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i);
+    const ogImage = ogImageMatch ? ogImageMatch[1] : '';
+    const siteNameMatch = html.match(/<meta[^>]*property=["']og:site_name["'][^>]*content=["']([^"']+)["']/i);
+    const siteName = siteNameMatch ? siteNameMatch[1] : '';
+    const faviconMatch = html.match(/<link[^>]*rel=["'](?:shortcut icon|icon)["'][^>]*href=["']([^"']+)["']/i);
+    const favicon = faviconMatch ? new URL(faviconMatch[1], url).toString() : '';
     
     // Extract text content (simple approach - remove HTML tags)
     const textContent = html
@@ -104,7 +112,7 @@ serve(async (req) => {
     // Fallback lightweight tag extraction if AI did not provide any
     if (!tags.length) {
       const source = `${title} ${metaDescription} ${textContent.slice(0, 1000)}`.toLowerCase();
-      const words = source.match(/[a-zA-Z][a-zA-Z\-]{2,}/g) || [];
+      const words = source.match(/[a-zA-Z][a-zA-Z-]{2,}/g) || [];
       const stop = new Set(["the","and","for","with","that","this","from","your","you","are","was","have","has","into","about","will","what","when","how","why","can","use","using","into","over","more","less","those","their","them","its","our","out","not","but","all","any","one","two","new","into","made","make"]);
       const counts = new Map<string, number>();
       for (const w of words) {
@@ -117,7 +125,7 @@ serve(async (req) => {
     console.log('Summary generated successfully');
 
     return new Response(
-      JSON.stringify({ summary, title, tags }),
+      JSON.stringify({ summary, title, tags, meta: { ogImage, favicon, siteName }, text: textContent }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
