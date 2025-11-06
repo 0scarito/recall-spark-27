@@ -42,7 +42,16 @@ const ReaderPane = ({ card }: { card: CardRow | null }) => {
       ) : card.metadata?.image ? (
         <img src={card.metadata.image} alt={card.title || ""} className="w-full rounded-md border" />
       ) : null}
-      {card.metadata?.text ? (
+      {Array.isArray((card as any).segments) && (card as any).segments.length > 0 ? (
+        <div className="max-w-none text-sm leading-6 space-y-2">
+          {(card as any).segments.map((s: any, i: number) => (
+            <div key={i}>
+              <span className="text-muted-foreground italic mr-2">{s.t}</span>
+              <span>{s.text}</span>
+            </div>
+          ))}
+        </div>
+      ) : card.metadata?.text ? (
         <div className="prose prose-invert max-w-none text-sm leading-6 whitespace-pre-wrap">
           {card.metadata.text}
         </div>
