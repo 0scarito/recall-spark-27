@@ -32,12 +32,21 @@ const AddContentDialog = ({ open, onOpenChange, onSuccess, initialUrl }: AddCont
 
     setLoading(true);
       try {
-        const res = await fetch('/api/fetch-summarize', {
+        const endpoint = `${window.location.origin}/api/fetch-summarize`;
+        const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url })
         });
-        if (!res.ok) throw new Error('Failed to summarize');
+        if (!res.ok) {
+          const html = await res.text();
+          throw new Error(`Summarize failed (${res.status}). ${html.slice(0, 200)}`);
+        }
+        const ct = res.headers.get('content-type') || '';
+        if (!ct.includes('application/json')) {
+          const html = await res.text();
+          throw new Error(`Unexpected response (not JSON). ${html.slice(0, 200)}`);
+        }
         const summaryData = await res.json();
 
       const isYouTube = /(?:youtube\.com|youtu\.be)\//i.test(url);
