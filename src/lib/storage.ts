@@ -1,3 +1,5 @@
+import { supabase } from "@/integrations/supabase/client";
+
 export type KnowledgeCard = {
   id: string;
   title: string;
@@ -7,55 +9,89 @@ export type KnowledgeCard = {
   content_type?: string;
   metadata?: { image?: string | null; text?: string | null; siteName?: string | null };
   created_at: string;
+  user_id?: string;
 };
 
-const KEY = 'knowledge_cards';
-
-function safeRead(): KnowledgeCard[] {
-  if (typeof window === 'undefined') return [];
-  try {
-    const raw = window.localStorage.getItem(KEY);
-    return raw ? (JSON.parse(raw) as KnowledgeCard[]) : [];
-  } catch {
+export async function loadCards(): Promise<KnowledgeCard[]> {
+  const { data, error } = await supabase
+    .from('knowledge_cards')
+    .select('*')
+    .order('created_at', { ascending: false });
+  
+  if (error) {
+    console.error('Error loading cards:', error);
     return [];
+  }
+  
+  return (data || []).map(card => ({
+    ...card,
+    metadata: card.metadata as { image?: string | null; text?: string | null; siteName?: string | null }
+  }));
+}
+
+export async function createCard(card: Omit<KnowledgeCard, 'user_id'>): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error('Not authenticated');
+
+  const { error } = await supabase
+    .from('knowledge_cards')
+    .insert({
+      id: card.id,
+      title: card.title,
+      url: card.url,
+      summary: card.summary,
+      tags: card.tags || [],
+      content_type: card.content_type,
+      metadata: card.metadata || {},
+      user_id: user.id,
+    });
+
+  if (error) {
+    console.error('Error creating card:', error);
+    throw error;
   }
 }
 
-function safeWrite(cards: KnowledgeCard[]) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(KEY, JSON.stringify(cards));
-  } catch {}
-}
-
-export async function loadCards(): Promise<KnowledgeCard[]> {
-  return safeRead().sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-}
-
-export async function createCard(card: KnowledgeCard): Promise<void> {
-  const cards = safeRead();
-  cards.unshift(card);
-  safeWrite(cards);
-}
-
 export async function updateCardTags(id: string, tags: string[]): Promise<void> {
-  const cards = safeRead();
-  const idx = cards.findIndex((c) => c.id === id);
-  if (idx >= 0) {
-    cards[idx] = { ...cards[idx], tags };
-    safeWrite(cards);
+  const { error } = await supabase
+    .from('knowledge_cards')
+    .update({ tags })
+    .eq('id', id);
+
+  if (error) {
+    console.error('Error updating card tags:', error);
+    throw error;
   }
 }
 
 export async function deleteCards(ids: string[]): Promise<void> {
-  const set = new Set(ids);
-  const cards = safeRead().filter((c) => !set.has(c.id));
-  safeWrite(cards);
+  const { error } = await supabase
+    .from('knowledge_cards')
+    .delete()
+    .in('id', ids);
+
+  if (error) {
+    console.error('Error deleting cards:', error);
+    throw error;
+  }
 }
 
 export async function getCard(id: string): Promise<KnowledgeCard | null> {
-  const cards = safeRead();
-  return cards.find((c) => c.id === id) || null;
+  const { data, error } = await supabase
+    .from('knowledge_cards')
+    .select('*')
+    .eq('id', id)
+    .single();
+
+  if (error) {
+    console.error('Error getting card:', error);
+    return null;
+  }
+
+  return data ? {
+    ...data,
+    metadata: data.metadata as { image?: string | null; text?: string | null; siteName?: string | null }
+  } : null;
 }
 
 

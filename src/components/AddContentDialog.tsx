@@ -6,7 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { createCard } from "@/lib/storage";
-import { Loader2, Link as LinkIcon } from "lucide-react";
+import { Loader2, Link as LinkIcon, Upload } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface AddContentDialogProps {
   open: boolean;
@@ -18,19 +19,19 @@ interface AddContentDialogProps {
 const AddContentDialog = ({ open, onOpenChange, onSuccess, initialUrl }: AddContentDialogProps) => {
   const [loading, setLoading] = useState(false);
   const [url, setUrl] = useState("");
+  const [file, setFile] = useState<File | null>(null);
 
   // Sync initial URL when dialog opens or prop changes
   if (open && initialUrl && url !== initialUrl) {
     setUrl(initialUrl);
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleUrlSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!url.trim()) return;
 
     setLoading(true);
     try {
-      // Appel vers l'API Lovable Cloud
       const res = await fetch('/api/fetch-summarize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -72,42 +73,135 @@ const AddContentDialog = ({ open, onOpenChange, onSuccess, initialUrl }: AddCont
     }
   };
 
+  const handleFileSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!file) return;
+
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('analyze-file', {
+        body: { 
+          fileName: file.name,
+          fileType: file.type,
+          fileData: await fileToBase64(file)
+        }
+      });
+
+      if (error) throw error;
+
+      await createCard({
+        id: crypto.randomUUID(),
+        title: data.title,
+        summary: data.summary,
+        content_type: file.type.startsWith('image/') ? 'image' : 'pdf',
+        tags: data.tags || [],
+        metadata: {
+          image: data.image || null,
+          text: data.text || null,
+          siteName: null,
+        },
+        created_at: new Date().toISOString(),
+      });
+
+      toast.success('File analyzed and added!');
+      setFile(null);
+      onOpenChange(false);
+      onSuccess();
+    } catch (error: any) {
+      console.error('Error analyzing file:', error);
+      toast.error(error.message || 'Failed to analyze file');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = error => reject(error);
+    });
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
           <DialogTitle>Add New Content</DialogTitle>
           <DialogDescription>
-            Enter a URL to save and summarize content to your knowledge base
+            Add content from URL or upload files (images, PDFs) for AI analysis
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="url">Content URL</Label>
-            <div className="relative">
-              <LinkIcon className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-              <Input
-                id="url"
-                type="url"
-                placeholder="https://example.com/article"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                className="pl-10"
-                disabled={loading}
-              />
-            </div>
-          </div>
-          <Button type="submit" disabled={loading || !url.trim()} className="w-full">
-            {loading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Processing...
-              </>
-            ) : (
-              'Add Content'
-            )}
-          </Button>
-        </form>
+        
+        <Tabs defaultValue="url" className="w-full">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="url">URL</TabsTrigger>
+            <TabsTrigger value="file">File Upload</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="url" className="space-y-4 mt-4">
+            <form onSubmit={handleUrlSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="url">Content URL</Label>
+                <div className="relative">
+                  <LinkIcon className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="url"
+                    type="url"
+                    placeholder="https://example.com/article"
+                    value={url}
+                    onChange={(e) => setUrl(e.target.value)}
+                    className="pl-10"
+                    disabled={loading}
+                  />
+                </div>
+              </div>
+              <Button type="submit" disabled={loading || !url.trim()} className="w-full">
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Analyzing...
+                  </>
+                ) : (
+                  'Analyze & Add'
+                )}
+              </Button>
+            </form>
+          </TabsContent>
+          
+          <TabsContent value="file" className="space-y-4 mt-4">
+            <form onSubmit={handleFileSubmit} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="file">Upload File</Label>
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="file"
+                    type="file"
+                    accept="image/*,.pdf"
+                    onChange={(e) => setFile(e.target.files?.[0] || null)}
+                    disabled={loading}
+                    className="cursor-pointer"
+                  />
+                  <Upload className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Supported: Images (JPG, PNG, WEBP) and PDFs
+                </p>
+              </div>
+              <Button type="submit" disabled={loading || !file} className="w-full">
+                {loading ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Analyzing...
+                  </>
+                ) : (
+                  'Analyze & Add'
+                )}
+              </Button>
+            </form>
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );
