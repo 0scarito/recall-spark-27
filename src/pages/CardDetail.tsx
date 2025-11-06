@@ -120,36 +120,25 @@ const CardDetail = () => {
 
             <ScrollArea className="flex-1">
               <TabsContent value="notebook" className="p-4 space-y-4 m-0">
-                {/* Concise Summary Button */}
-                <Button 
-                  variant="ghost" 
-                  className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground"
-                  onClick={() => setShowSummary(!showSummary)}
-                >
-                  <ArrowLeft className="w-4 h-4" />
-                  Concise summary
-                </Button>
-
-                {/* Summary Sections */}
+                {/* Recap Section */}
                 {card.summary && (
-                  <div className="space-y-6">
-                    {parseSummaryToSections(card.summary).map((section, idx) => (
-                      <div key={idx}>
-                        <h3 className="font-semibold text-base mb-3">{section.title}</h3>
-                        <ul className="space-y-2">
-                          {section.points.map((point, pidx) => (
-                            <li key={pidx} className="text-sm text-muted-foreground leading-relaxed">
-                              • {point.text}
-                              {point.timestamp && (
-                                <span className="ml-2 text-xs opacity-70">{point.timestamp}</span>
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    ))}
+                  <div className="space-y-4">
+                    <h3 className="font-semibold text-base">Recap</h3>
+                    <div className="bg-accent/50 rounded-lg p-4">
+                      <p className="text-sm leading-relaxed text-foreground">
+                        {parseSummary(card.summary)}
+                      </p>
+                    </div>
                   </div>
                 )}
+
+                {/* Key Points */}
+                <div className="space-y-4">
+                  <h3 className="font-semibold text-base">Key Points</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Structured notes coming soon
+                  </p>
+                </div>
               </TabsContent>
 
               <TabsContent value="chat" className="p-4 m-0">
@@ -222,58 +211,38 @@ const CardDetail = () => {
   );
 };
 
-// Helper to parse summary into sections with timestamps
-function parseSummaryToSections(summary: string) {
-  const lines = summary.split('\n').filter(l => l.trim());
-  const sections: Array<{ title: string; points: Array<{ text: string; timestamp?: string }> }> = [];
-  
-  let currentSection: any = null;
-  
-  for (const line of lines) {
-    // Check if it's a section header (usually starts with capital or is short)
-    if (line.length < 50 && !line.startsWith('•') && !line.startsWith('-')) {
-      if (currentSection) sections.push(currentSection);
-      currentSection = { title: line.trim(), points: [] };
-    } else if (currentSection) {
-      // Extract timestamp if present (format: MM:SS)
-      const timestampMatch = line.match(/(\d{1,2}:\d{2})/);
-      const text = line.replace(/^[•\-]\s*/, '').replace(/\d{1,2}:\d{2}/, '').trim();
-      currentSection.points.push({
-        text,
-        timestamp: timestampMatch ? timestampMatch[1] : undefined
-      });
+// Helper to parse summary JSON and extract the actual summary text
+function parseSummary(summaryField: string): string {
+  try {
+    // Remove markdown code block if present
+    let jsonStr = summaryField.trim();
+    if (jsonStr.startsWith('```json')) {
+      jsonStr = jsonStr.replace(/^```json\n/, '').replace(/\n```$/, '');
+    } else if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/^```\n/, '').replace(/\n```$/, '');
     }
+    
+    // Parse JSON
+    const parsed = JSON.parse(jsonStr);
+    return parsed.summary || summaryField;
+  } catch {
+    // If parsing fails, return the original text
+    return summaryField;
   }
-  
-  if (currentSection) sections.push(currentSection);
-  
-  return sections.length > 0 ? sections : [{ title: 'Summary', points: [{ text: summary }] }];
 }
 
-// Helper to parse and render transcript with timestamps
+// Helper to render transcript
 function parseTranscript(text: string) {
-  const lines = text.split('\n');
+  // Split into paragraphs
+  const paragraphs = text.split('\n').filter(p => p.trim());
   
   return (
     <div className="space-y-4">
-      {lines.map((line, idx) => {
-        // Check for timestamp pattern (MM:SS)
-        const timestampMatch = line.match(/^(\d{1,2}:\d{2})\s*(.+)$/);
-        
-        if (timestampMatch) {
-          const [, timestamp, content] = timestampMatch;
-          return (
-            <p key={idx} className="text-sm leading-relaxed">
-              <span className="text-muted-foreground mr-2 font-mono text-xs">{timestamp}</span>
-              {content}
-            </p>
-          );
-        }
-        
-        return line.trim() ? (
-          <p key={idx} className="text-sm leading-relaxed">{line}</p>
-        ) : null;
-      })}
+      {paragraphs.map((paragraph, idx) => (
+        <p key={idx} className="text-base leading-relaxed text-foreground/90">
+          {paragraph}
+        </p>
+      ))}
     </div>
   );
 }
