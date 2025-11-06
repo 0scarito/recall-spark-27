@@ -32,16 +32,23 @@ const AddContentDialog = ({ open, onOpenChange, onSuccess, initialUrl }: AddCont
 
     setLoading(true);
     try {
-      const res = await fetch('/api/fetch-summarize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url }),
+      const { data: summaryData, error } = await supabase.functions.invoke('summarize-content', {
+        body: { url }
       });
-      if (!res.ok) throw new Error('Failed to summarize');
-      const summaryData = await res.json();
+
+      if (error) throw error;
 
       const isYouTube = /(?:youtube\.com|youtu\.be)\//i.test(url);
       const contentType = isYouTube ? 'youtube' : 'article';
+
+      // Extract YouTube thumbnail
+      let thumbnailImage = null;
+      if (isYouTube) {
+        const match = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+        if (match) {
+          thumbnailImage = `https://img.youtube.com/vi/${match[1]}/maxresdefault.jpg`;
+        }
+      }
 
       await createCard({
         id: crypto.randomUUID(),
@@ -51,10 +58,7 @@ const AddContentDialog = ({ open, onOpenChange, onSuccess, initialUrl }: AddCont
         content_type: contentType,
         tags: Array.isArray(summaryData.tags) ? summaryData.tags : [],
         metadata: {
-          image: (isYouTube ? (function(){
-            const m = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
-            return m ? `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg` : null;
-          })() : null) || summaryData.meta?.ogImage || summaryData.meta?.favicon || null,
+          image: thumbnailImage || summaryData.meta?.ogImage || summaryData.meta?.favicon || null,
           siteName: summaryData.meta?.siteName || null,
           text: summaryData.text || null,
         },
