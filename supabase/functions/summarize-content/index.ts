@@ -21,55 +21,99 @@ serve(async (req) => {
 
     console.log('Fetching and summarizing content from:', url);
 
-    // Fetch the actual content from the URL with proper headers
-    const contentResponse = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache'
-      }
-    });
+    let html = '';
+    let title = '';
+    let metaDescription = '';
+    let ogImage = '';
+    let siteName = '';
+    let favicon = '';
+    let textContent = '';
     
-    if (!contentResponse.ok) {
-      console.error(`Failed to fetch URL: ${contentResponse.status} ${contentResponse.statusText}`);
-      
-      // For rate limiting, return a helpful error
-      if (contentResponse.status === 429) {
-        throw new Error('The website is rate limiting requests. Please try again in a few moments.');
+    // Special handling for YouTube - use oEmbed API
+    const isYouTube = /(?:youtube\.com|youtu\.be)\//i.test(url);
+    
+    if (isYouTube) {
+      try {
+        const videoMatch = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+        if (videoMatch) {
+          const videoId = videoMatch[1];
+          const oEmbedUrl = `https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`;
+          const oEmbedResponse = await fetch(oEmbedUrl);
+          
+          if (oEmbedResponse.ok) {
+            const oEmbedData = await oEmbedResponse.json();
+            title = oEmbedData.title || 'YouTube Video';
+            siteName = 'YouTube';
+            ogImage = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+            textContent = `YouTube video: ${title}. Channel: ${oEmbedData.author_name || 'Unknown'}`;
+            
+            console.log('Successfully fetched YouTube video info via oEmbed');
+          }
+        }
+      } catch (e) {
+        console.log('YouTube oEmbed failed, will try standard fetch:', e);
       }
-      
-      // For other errors, provide context
-      throw new Error(`Unable to access the URL (${contentResponse.status}). The website might be blocking automated requests.`);
     }
     
-    const html = await contentResponse.text();
-    
-    // Extract title from HTML
-    const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    const title = titleMatch ? titleMatch[1].trim() : new URL(url).hostname;
-    
-    // Extract meta description
-    const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i);
-    const metaDescription = descMatch ? descMatch[1] : '';
+    // If we don't have content yet, try standard fetch
+    if (!title) {
+      try {
+        const contentResponse = await fetch(url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache'
+          }
+        });
+        
+        if (!contentResponse.ok) {
+          console.warn(`Failed to fetch URL: ${contentResponse.status} ${contentResponse.statusText}`);
+          
+          // For rate limiting or blocking, fall back to AI analysis with just URL
+          if (contentResponse.status === 429 || contentResponse.status === 403) {
+            console.log('Rate limited or blocked, using URL-only analysis');
+            title = new URL(url).hostname.replace('www.', '');
+            textContent = `Content from: ${url}. Unable to fetch full content due to access restrictions.`;
+          } else {
+            throw new Error(`Unable to access the URL (${contentResponse.status})`);
+          }
+        } else {
+          html = await contentResponse.text();
+          
+          // Extract title from HTML
+          const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+          title = titleMatch ? titleMatch[1].trim() : new URL(url).hostname;
+          
+          // Extract meta description
+          const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i);
+          metaDescription = descMatch ? descMatch[1] : '';
 
-    // Extract OG image / site name / favicon
-    const ogImageMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i);
-    const ogImage = ogImageMatch ? ogImageMatch[1] : '';
-    const siteNameMatch = html.match(/<meta[^>]*property=["']og:site_name["'][^>]*content=["']([^"']+)["']/i);
-    const siteName = siteNameMatch ? siteNameMatch[1] : '';
-    const faviconMatch = html.match(/<link[^>]*rel=["'](?:shortcut icon|icon)["'][^>]*href=["']([^"']+)["']/i);
-    const favicon = faviconMatch ? new URL(faviconMatch[1], url).toString() : '';
-    
-    // Extract text content (simple approach - remove HTML tags)
-    const textContent = html
-      .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-      .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 5000); // First 5000 chars
+          // Extract OG image / site name / favicon
+          const ogImageMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i);
+          ogImage = ogImageMatch ? ogImageMatch[1] : '';
+          const siteNameMatch = html.match(/<meta[^>]*property=["']og:site_name["'][^>]*content=["']([^"']+)["']/i);
+          siteName = siteNameMatch ? siteNameMatch[1] : '';
+          const faviconMatch = html.match(/<link[^>]*rel=["'](?:shortcut icon|icon)["'][^>]*href=["']([^"']+)["']/i);
+          favicon = faviconMatch ? new URL(faviconMatch[1], url).toString() : '';
+          
+          // Extract text content (simple approach - remove HTML tags)
+          textContent = html
+            .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+            .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 5000); // First 5000 chars
+        }
+      } catch (fetchError) {
+        console.warn('Fetch failed, using URL-only analysis:', fetchError);
+        // Fallback: use just the URL for AI analysis
+        title = new URL(url).hostname.replace('www.', '');
+        textContent = `Content from: ${url}`;
+      }
+    }
 
     console.log('Extracted title:', title);
     console.log('Content length:', textContent.length);
