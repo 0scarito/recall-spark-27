@@ -18,7 +18,13 @@ export default async function handler(req: Request): Promise<Response> {
       },
     });
     if (!resp.ok) throw new Error(`Failed to fetch URL: ${resp.status} ${resp.statusText}`);
-    const html = await resp.text();
+    const contentType = resp.headers.get('content-type') || '';
+    const rawBody = await resp.arrayBuffer();
+    const bodyText = new TextDecoder('utf-8').decode(new Uint8Array(rawBody));
+
+    // If PDF: we cannot extract text reliably serverless without extra libs; return minimal meta, let client embed.
+    const isPDF = /application\/pdf/i.test(contentType) || /\.pdf(\?|$)/i.test(url);
+    const html = isPDF ? '' : bodyText;
 
     const pick = (re: RegExp) => (html.match(re)?.[1] || '').trim();
     const title = pick(/<title[^>]*>([^<]+)<\/title>/i) || new URL(url).hostname;
@@ -29,13 +35,47 @@ export default async function handler(req: Request): Promise<Response> {
     const faviconRel = pick(/<link[^>]*rel=["'](?:shortcut icon|icon)["'][^>]*href=["']([^"']+)["']/i);
     const favicon = faviconRel ? new URL(faviconRel, url).toString() : '';
 
-    const textContent = html
-      .replace(/<script\b[^<]*(?:(?!<\\/script>)<[^<]*)*<\\/script>/gi, '')
-      .replace(/<style\b[^<]*(?:(?!<\\/style>)<[^<]*)*<\\/style>/gi, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim()
-      .slice(0, 5000);
+    let textContent = '';
+    if (!isPDF) {
+      textContent = html
+        .replace(/<script\b[^<]*(?:(?!<\\/script>)<[^<]*)*<\\/script>/gi, '')
+        .replace(/<style\b[^<]*(?:(?!<\\/style>)<[^<]*)*<\\/style>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 15000);
+    }
+
+    // Attempt YouTube transcript if URL is YouTube
+    const ytIdMatch = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
+    if (ytIdMatch) {
+      const vid = ytIdMatch[1];
+      const langs = ['fr', 'en', 'en-US', 'en-GB', 'fr-FR'];
+      for (const lang of langs) {
+        try {
+          const tt = await fetch(`https://video.google.com/timedtext?lang=${lang}&v=${vid}`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+          if (tt.ok) {
+            const xml = await tt.text();
+            if (xml.includes('<text')) {
+              // Naive XML decode to plain text
+              const merged = xml
+                .replace(/<\/?text[^>]*>/g, '\n')
+                .replace(/&amp;/g, '&')
+                .replace(/&lt;/g, '<')
+                .replace(/&gt;/g, '>')
+                .replace(/&quot;/g, '"')
+                .replace(/&#39;/g, "'")
+                .replace(/\s+/g, ' ')
+                .trim();
+              if (merged.length > 0) {
+                textContent = merged;
+                break;
+              }
+            }
+          }
+        } catch {}
+      }
+    }
 
     const apiKey = (globalThis as any).process?.env?.LOVABLE_API_KEY || (globalThis as any).Deno?.env?.get?.('LOVABLE_API_KEY');
     if (!apiKey) throw new Error('LOVABLE_API_KEY not configured');
@@ -47,7 +87,7 @@ export default async function handler(req: Request): Promise<Response> {
         model: 'google/gemini-2.5-flash',
         messages: [
           { role: 'system', content: 'Tu es un assistant de lecture. Résume en français clair (120-180 mots) + 3-6 tags courts. Réponds STRICTEMENT en JSON {"summary":"...","tags":["..."]}.' },
-          { role: 'user', content: `Titre: ${title}\nURL: ${url}\nContenu: ${metaDescription || textContent}` },
+          { role: 'user', content: `Titre: ${title}\nURL: ${url}\nContenu: ${metaDescription || (textContent ? textContent.slice(0, 8000) : '(PDF)')}` },
         ],
       }),
     });
@@ -71,7 +111,7 @@ export default async function handler(req: Request): Promise<Response> {
     }
 
     return new Response(
-      JSON.stringify({ title, summary, tags, meta: { ogImage, favicon, siteName }, text: textContent }),
+      JSON.stringify({ title, summary, tags, meta: { ogImage, favicon, siteName }, text: textContent, contentType: isPDF ? 'pdf' : (ytIdMatch ? 'youtube' : 'article') }),
       { headers: { ...cors, 'Content-Type': 'application/json' } },
     );
   } catch (err: any) {

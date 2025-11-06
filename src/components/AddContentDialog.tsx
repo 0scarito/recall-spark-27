@@ -39,7 +39,8 @@ const AddContentDialog = ({ open, onOpenChange, onSuccess, initialUrl }: AddCont
       if (error) throw error;
 
       const isYouTube = /(?:youtube\.com|youtu\.be)\//i.test(url);
-      const contentType = isYouTube ? 'youtube' : 'article';
+      const isPDF = /\.pdf(\?|$)/i.test(url) || summaryData.contentType === 'pdf';
+      const contentType = isPDF ? 'pdf' : (isYouTube ? 'youtube' : 'article');
 
       // Extract YouTube thumbnail
       let thumbnailImage = null;
