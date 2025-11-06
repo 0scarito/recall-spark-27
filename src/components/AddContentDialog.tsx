@@ -32,23 +32,13 @@ const AddContentDialog = ({ open, onOpenChange, onSuccess, initialUrl }: AddCont
     if (!url.trim()) return;
 
     setLoading(true);
-      try {
-        const endpoint = getApiUrl('/api/fetch-summarize');
-        const res = await fetch(endpoint, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url })
-        });
-        if (!res.ok) {
-          const html = await res.text();
-          throw new Error(`Summarize failed (${res.status}). ${html.slice(0, 200)}`);
-        }
-        const ct = res.headers.get('content-type') || '';
-        if (!ct.includes('application/json')) {
-          const html = await res.text();
-          throw new Error(`Unexpected response (not JSON). ${html.slice(0, 200)}`);
-        }
-        const summaryData = await res.json();
+    try {
+      const { data: summaryData, error } = await supabase.functions.invoke('summarize-content', {
+        body: { url }
+      });
+
+      if (error) throw error;
+      if (!summaryData) throw new Error('No data returned from summarization');
 
       const isYouTube = /(?:youtube\.com|youtu\.be)\//i.test(url);
       const isPDF = /\.pdf(\?|$)/i.test(url) || summaryData.contentType === 'pdf';
