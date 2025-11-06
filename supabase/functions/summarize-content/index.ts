@@ -21,10 +21,27 @@ serve(async (req) => {
 
     console.log('Fetching and summarizing content from:', url);
 
-    // Fetch the actual content from the URL (server-side, no CORS issues)
-    const contentResponse = await fetch(url);
+    // Fetch the actual content from the URL with proper headers
+    const contentResponse = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache'
+      }
+    });
+    
     if (!contentResponse.ok) {
-      throw new Error(`Failed to fetch URL: ${contentResponse.statusText}`);
+      console.error(`Failed to fetch URL: ${contentResponse.status} ${contentResponse.statusText}`);
+      
+      // For rate limiting, return a helpful error
+      if (contentResponse.status === 429) {
+        throw new Error('The website is rate limiting requests. Please try again in a few moments.');
+      }
+      
+      // For other errors, provide context
+      throw new Error(`Unable to access the URL (${contentResponse.status}). The website might be blocking automated requests.`);
     }
     
     const html = await contentResponse.text();
