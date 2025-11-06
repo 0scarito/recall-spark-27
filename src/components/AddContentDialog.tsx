@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { createCard } from "@/lib/storage";
+import { getApiUrl } from "@/lib/api";
 import { Loader2, Link as LinkIcon, Upload } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -32,7 +33,7 @@ const AddContentDialog = ({ open, onOpenChange, onSuccess, initialUrl }: AddCont
 
     setLoading(true);
       try {
-        const endpoint = `${window.location.origin}/api/fetch-summarize`;
+        const endpoint = getApiUrl('/api/fetch-summarize');
         const res = await fetch(endpoint, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
