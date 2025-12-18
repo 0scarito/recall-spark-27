@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      chat_messages: {
+        Row: {
+          content: string
+          conversation_id: string
+          created_at: string | null
+          id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          conversation_id: string
+          created_at?: string | null
+          id?: string
+          role: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          conversation_id?: string
+          created_at?: string | null
+          id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       knowledge_cards: {
         Row: {
           content_type: string | null
@@ -52,6 +79,85 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      questions: {
+        Row: {
+          answer: string
+          card_id: string
+          created_at: string | null
+          difficulty: string | null
+          id: string
+          question: string
+          user_id: string
+        }
+        Insert: {
+          answer: string
+          card_id: string
+          created_at?: string | null
+          difficulty?: string | null
+          id?: string
+          question: string
+          user_id: string
+        }
+        Update: {
+          answer?: string
+          card_id?: string
+          created_at?: string | null
+          difficulty?: string | null
+          id?: string
+          question?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "questions_card_id_fkey"
+            columns: ["card_id"]
+            isOneToOne: false
+            referencedRelation: "knowledge_cards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      review_sessions: {
+        Row: {
+          ease_factor: number | null
+          id: string
+          interval_days: number | null
+          is_correct: boolean
+          next_review: string | null
+          question_id: string
+          reviewed_at: string | null
+          user_id: string
+        }
+        Insert: {
+          ease_factor?: number | null
+          id?: string
+          interval_days?: number | null
+          is_correct: boolean
+          next_review?: string | null
+          question_id: string
+          reviewed_at?: string | null
+          user_id: string
+        }
+        Update: {
+          ease_factor?: number | null
+          id?: string
+          interval_days?: number | null
+          is_correct?: boolean
+          next_review?: string | null
+          question_id?: string
+          reviewed_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "review_sessions_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
