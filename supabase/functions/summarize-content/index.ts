@@ -13,15 +13,14 @@ serve(async (req) => {
 
   try {
     const { url } = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    const PERPLEXITY_API_KEY = Deno.env.get('PERPLEXITY_API_KEY');
     
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
+    if (!PERPLEXITY_API_KEY) {
+      throw new Error('PERPLEXITY_API_KEY is not configured');
     }
 
     console.log('Fetching and summarizing content from:', url);
 
-    let html = '';
     let title = '';
     let metaDescription = '';
     let ogImage = '';
@@ -71,7 +70,6 @@ serve(async (req) => {
         if (!contentResponse.ok) {
           console.warn(`Failed to fetch URL: ${contentResponse.status} ${contentResponse.statusText}`);
           
-          // For rate limiting or blocking, fall back to AI analysis with just URL
           if (contentResponse.status === 429 || contentResponse.status === 403) {
             console.log('Rate limited or blocked, using URL-only analysis');
             title = new URL(url).hostname.replace('www.', '');
@@ -80,17 +78,14 @@ serve(async (req) => {
             throw new Error(`Unable to access the URL (${contentResponse.status})`);
           }
         } else {
-          html = await contentResponse.text();
+          const html = await contentResponse.text();
           
-          // Extract title from HTML
           const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
           title = titleMatch ? titleMatch[1].trim() : new URL(url).hostname;
           
-          // Extract meta description
           const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i);
           metaDescription = descMatch ? descMatch[1] : '';
 
-          // Extract OG image / site name / favicon
           const ogImageMatch = html.match(/<meta[^>]*property=["']og:image["'][^>]*content=["']([^"']+)["']/i);
           ogImage = ogImageMatch ? ogImageMatch[1] : '';
           const siteNameMatch = html.match(/<meta[^>]*property=["']og:site_name["'][^>]*content=["']([^"']+)["']/i);
@@ -98,18 +93,16 @@ serve(async (req) => {
           const faviconMatch = html.match(/<link[^>]*rel=["'](?:shortcut icon|icon)["'][^>]*href=["']([^"']+)["']/i);
           favicon = faviconMatch ? new URL(faviconMatch[1], url).toString() : '';
           
-          // Extract text content (simple approach - remove HTML tags)
           textContent = html
             .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
             .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '')
             .replace(/<[^>]+>/g, ' ')
             .replace(/\s+/g, ' ')
             .trim()
-            .slice(0, 5000); // First 5000 chars
+            .slice(0, 5000);
         }
       } catch (fetchError) {
         console.warn('Fetch failed, using URL-only analysis:', fetchError);
-        // Fallback: use just the URL for AI analysis
         title = new URL(url).hostname.replace('www.', '');
         textContent = `Content from: ${url}`;
       }
@@ -118,59 +111,93 @@ serve(async (req) => {
     console.log('Extracted title:', title);
     console.log('Content length:', textContent.length);
 
-    // Generate AI summary
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    // Generate AI summary using Perplexity with web search for enhanced context
+    const response = await fetch('https://api.perplexity.ai/chat/completions', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+        'Authorization': `Bearer ${PERPLEXITY_API_KEY}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'sonar',
         messages: [
           {
             role: 'system',
-            content: 'You are a knowledge assistant. Create concise, informative summaries of web content. Extract key insights and main points. Keep summaries under 200 words. Additionally, propose 3-6 topical tags (single or two-word phrases). Return JSON with keys: summary (string), tags (string[]).'
+            content: `You are a knowledge assistant that creates comprehensive, well-researched summaries. 
+Your task is to:
+1. Summarize the main content and key insights
+2. Add relevant context from your web search to enrich the summary
+3. Extract the most important takeaways
+4. Propose 4-8 topical tags
+
+Return a JSON object with:
+- "summary": A detailed recap (200-300 words) that captures the essence and adds valuable context
+- "tags": An array of 4-8 relevant tags (single or two-word phrases)
+
+IMPORTANT: Return ONLY valid JSON, no markdown formatting.`
           },
           {
             role: 'user',
-            content: `Summarize and tag this content. Respond ONLY with JSON.\n\nTitle: ${title}\n\nURL: ${url}\n\nContent: ${metaDescription || textContent}`
+            content: `Analyze and summarize this content. Search the web for additional context to enrich the summary.
+
+Title: ${title}
+URL: ${url}
+
+Content excerpt:
+${metaDescription || textContent.slice(0, 3000)}
+
+Provide a comprehensive recap with additional insights from your research.`
           }
         ],
       }),
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Perplexity API error:', response.status, errorText);
+      
       if (response.status === 429) {
         return new Response(
           JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }),
           { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
       }
-      if (response.status === 402) {
-        return new Response(
-          JSON.stringify({ error: 'Payment required. Please add credits to your workspace.' }),
-          { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      const errorText = await response.text();
-      console.error('AI gateway error:', response.status, errorText);
       throw new Error('Failed to generate summary');
     }
 
     const data = await response.json();
     const aiContent = data.choices[0].message.content;
+    const citations = data.citations || [];
+    
+    console.log('Perplexity response received, citations:', citations.length);
+    
     let summary = '';
     let tags: string[] = [];
+    
     try {
-      const parsed = JSON.parse(aiContent);
+      // Clean the response - remove markdown code blocks if present
+      let cleanContent = aiContent.trim();
+      if (cleanContent.startsWith('```json')) {
+        cleanContent = cleanContent.slice(7);
+      } else if (cleanContent.startsWith('```')) {
+        cleanContent = cleanContent.slice(3);
+      }
+      if (cleanContent.endsWith('```')) {
+        cleanContent = cleanContent.slice(0, -3);
+      }
+      cleanContent = cleanContent.trim();
+      
+      const parsed = JSON.parse(cleanContent);
       summary = parsed.summary || '';
-      if (Array.isArray(parsed.tags)) tags = parsed.tags.slice(0, 8).map((t: unknown) => String(t)).filter(Boolean);
-    } catch {
+      if (Array.isArray(parsed.tags)) {
+        tags = parsed.tags.slice(0, 8).map((t: unknown) => String(t)).filter(Boolean);
+      }
+    } catch (parseError) {
+      console.warn('Failed to parse AI response as JSON:', parseError);
       summary = aiContent;
     }
 
-    // Fallback lightweight tag extraction if AI did not provide any
+    // Fallback tag extraction if AI did not provide any
     if (!tags.length) {
       const source = `${title} ${metaDescription} ${textContent.slice(0, 1000)}`.toLowerCase();
       const words = source.match(/[a-zA-Z][a-zA-Z-]{2,}/g) || [];
@@ -183,10 +210,17 @@ serve(async (req) => {
       tags = Array.from(counts.entries()).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([w])=>w);
     }
 
-    console.log('Summary generated successfully');
+    console.log('Summary generated successfully with Perplexity');
 
     return new Response(
-      JSON.stringify({ summary, title, tags, meta: { ogImage, favicon, siteName }, text: textContent }),
+      JSON.stringify({ 
+        summary, 
+        title, 
+        tags, 
+        meta: { ogImage, favicon, siteName }, 
+        text: textContent,
+        citations // Include Perplexity's source citations
+      }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
