@@ -1,13 +1,22 @@
 import AppLayout from "@/components/AppLayout";
 import { Input } from "@/components/ui/input";
-import { MessageSquare, Send } from "lucide-react";
+import { MessageSquare, Send, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useChat } from "@/hooks/useChat";
 import { useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 const Chat = () => {
-  const { messages, sendMessage, isLoading } = useChat();
+  const { 
+    messages, 
+    conversations,
+    currentConversationId,
+    sendMessage, 
+    isLoading,
+    startNewConversation,
+    selectConversation,
+    deleteConversation,
+  } = useChat();
   const [inputValue, setInputValue] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -21,15 +30,52 @@ const Chat = () => {
     <AppLayout>
       <div className="flex h-full">
         {/* Left sidebar for chat history */}
-        <div className="w-64 border-r border-border bg-muted/30 p-4">
-          <Button variant="ghost" className="w-full justify-start gap-2 mb-4">
-            <MessageSquare className="w-4 h-4" />
-            New Chat
-          </Button>
-          <div className="text-center text-muted-foreground text-sm py-8">
-            <MessageSquare className="w-12 h-12 mx-auto mb-2 opacity-30" />
-            No history yet
+        <div className="w-64 border-r border-border bg-muted/30 flex flex-col">
+          <div className="p-4">
+            <Button 
+              variant="outline" 
+              className="w-full justify-start gap-2"
+              onClick={startNewConversation}
+            >
+              <Plus className="w-4 h-4" />
+              New Chat
+            </Button>
           </div>
+          
+          <ScrollArea className="flex-1 px-2">
+            {conversations.length === 0 ? (
+              <div className="text-center text-muted-foreground text-sm py-8">
+                <MessageSquare className="w-12 h-12 mx-auto mb-2 opacity-30" />
+                No history yet
+              </div>
+            ) : (
+              <div className="space-y-1 pb-4">
+                {conversations.map((conv) => (
+                  <div
+                    key={conv.id}
+                    className={`group flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer hover:bg-muted/50 ${
+                      currentConversationId === conv.id ? 'bg-muted' : ''
+                    }`}
+                    onClick={() => selectConversation(conv.id)}
+                  >
+                    <MessageSquare className="w-4 h-4 shrink-0 text-muted-foreground" />
+                    <span className="text-sm truncate flex-1">{conv.title}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 opacity-0 group-hover:opacity-100"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteConversation(conv.id);
+                      }}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </ScrollArea>
         </div>
 
         {/* Main chat area */}
@@ -38,6 +84,9 @@ const Chat = () => {
             <div className="flex-1 flex items-center justify-center p-8">
               <div className="w-full max-w-3xl space-y-8">
                 <h2 className="text-center text-3xl font-semibold">Chat with your knowledge base</h2>
+                <p className="text-center text-muted-foreground">
+                  Ask questions about your saved articles, videos, and notes
+                </p>
                 <form onSubmit={handleSubmit} className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">@</span>
                   <Input
@@ -64,7 +113,7 @@ const Chat = () => {
                 <div className="max-w-3xl mx-auto space-y-6">
                   {messages.map((msg, idx) => (
                     <div
-                      key={idx}
+                      key={msg.id || idx}
                       className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
                       <div
@@ -124,5 +173,3 @@ const Chat = () => {
 };
 
 export default Chat;
-
-

@@ -5,10 +5,12 @@ import { loadCards, KnowledgeCard } from "@/lib/storage";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Plus, Share, Copy, ExternalLink } from "lucide-react";
+import { Plus, Share, Copy, ExternalLink, Brain, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import ConnectionsGraph from "@/components/ConnectionsGraph";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useQuestions } from "@/hooks/useQuestions";
+import { Card, CardContent } from "@/components/ui/card";
 
 const extractYouTubeId = (url?: string) => {
   if (!url) return "";
@@ -20,7 +22,8 @@ const CardDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
   const [cards, setCards] = useState<KnowledgeCard[]>([]);
-  const [showSummary, setShowSummary] = useState(true);
+
+  const { questions, isGenerating, generateQuestions, deleteQuestion } = useQuestions(id);
 
   useEffect(() => {
     loadCards().then(setCards);
@@ -40,6 +43,12 @@ const CardDetail = () => {
   }
 
   const readingTime = Math.ceil((card.metadata?.text?.split(' ').length || 0) / 200);
+
+  const handleGenerateQuestions = async () => {
+    if (id) {
+      await generateQuestions(id);
+    }
+  };
 
   return (
     <AppLayout>
@@ -93,22 +102,10 @@ const CardDetail = () => {
                 Notebook
               </TabsTrigger>
               <TabsTrigger 
-                value="chat"
-                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent"
-              >
-                Chat
-              </TabsTrigger>
-              <TabsTrigger 
                 value="quiz"
                 className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent"
               >
-                Quiz
-              </TabsTrigger>
-              <TabsTrigger 
-                value="connections"
-                className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent"
-              >
-                Connections
+                Quiz ({questions.length})
               </TabsTrigger>
               <TabsTrigger 
                 value="graph"
@@ -132,6 +129,26 @@ const CardDetail = () => {
                   </div>
                 )}
 
+                {/* Generate Questions Button */}
+                <Button 
+                  variant="outline" 
+                  className="w-full gap-2"
+                  onClick={handleGenerateQuestions}
+                  disabled={isGenerating}
+                >
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <Brain className="w-4 h-4" />
+                      Generate Questions
+                    </>
+                  )}
+                </Button>
+
                 {/* Key Points */}
                 <div className="space-y-4">
                   <h3 className="font-semibold text-base">Key Points</h3>
@@ -141,16 +158,68 @@ const CardDetail = () => {
                 </div>
               </TabsContent>
 
-              <TabsContent value="chat" className="p-4 m-0">
-                <p className="text-sm text-muted-foreground">Chat feature coming soon</p>
-              </TabsContent>
+              <TabsContent value="quiz" className="p-4 m-0 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold">Questions</h3>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={handleGenerateQuestions}
+                    disabled={isGenerating}
+                  >
+                    {isGenerating ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Plus className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
 
-              <TabsContent value="quiz" className="p-4 m-0">
-                <p className="text-sm text-muted-foreground">Quiz feature coming soon</p>
-              </TabsContent>
+                {questions.length === 0 ? (
+                  <Card className="bg-muted/50">
+                    <CardContent className="py-6 text-center">
+                      <Brain className="w-8 h-8 mx-auto mb-2 text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">
+                        No questions yet. Click generate to create review questions.
+                      </p>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <div className="space-y-3">
+                    {questions.map((q, idx) => (
+                      <Card key={q.id}>
+                        <CardContent className="py-3 px-4">
+                          <div className="flex items-start gap-2">
+                            <span className="text-xs text-muted-foreground font-mono">
+                              {idx + 1}.
+                            </span>
+                            <div className="flex-1">
+                              <p className="text-sm font-medium">{q.question}</p>
+                              <p className="text-xs text-muted-foreground mt-1">{q.answer}</p>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6 shrink-0"
+                              onClick={() => deleteQuestion(q.id)}
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
 
-              <TabsContent value="connections" className="p-4 m-0">
-                <p className="text-sm text-muted-foreground">Connections feature coming soon</p>
+                {questions.length > 0 && (
+                  <Button 
+                    className="w-full"
+                    onClick={() => navigate('/review')}
+                  >
+                    Go to Review
+                  </Button>
+                )}
               </TabsContent>
 
               <TabsContent value="graph" className="p-4 m-0">
@@ -214,26 +283,21 @@ const CardDetail = () => {
 // Helper to parse summary JSON and extract the actual summary text
 function parseSummary(summaryField: string): string {
   try {
-    // Remove markdown code block if present
     let jsonStr = summaryField.trim();
     if (jsonStr.startsWith('```json')) {
       jsonStr = jsonStr.replace(/^```json\n/, '').replace(/\n```$/, '');
     } else if (jsonStr.startsWith('```')) {
       jsonStr = jsonStr.replace(/^```\n/, '').replace(/\n```$/, '');
     }
-    
-    // Parse JSON
     const parsed = JSON.parse(jsonStr);
     return parsed.summary || summaryField;
   } catch {
-    // If parsing fails, return the original text
     return summaryField;
   }
 }
 
 // Helper to render transcript
 function parseTranscript(text: string) {
-  // Split into paragraphs
   const paragraphs = text.split('\n').filter(p => p.trim());
   
   return (
