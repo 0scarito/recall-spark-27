@@ -12,7 +12,8 @@ serve(async (req) => {
   }
 
   try {
-    const { question } = await req.json();
+    const { message, question, cardId, context: providedContext, history } = await req.json();
+    const userMessage = message || question; // Support both parameter names
     
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) throw new Error('No authorization header');
@@ -25,18 +26,55 @@ serve(async (req) => {
     const { data: { user }, error: authError } = await supabase.auth.getUser(token);
     if (authError || !user) throw new Error('Unauthorized');
 
-    // Get user's knowledge cards
-    const { data: cards, error: cardsError } = await supabase
-      .from('knowledge_cards')
-      .select('*')
-      .eq('user_id', user.id);
+    let context = '';
 
-    if (cardsError) throw cardsError;
+    // If cardId provided, use that specific card's content
+    if (cardId) {
+      const { data: card, error: cardError } = await supabase
+        .from('knowledge_cards')
+        .select('*')
+        .eq('id', cardId)
+        .eq('user_id', user.id)
+        .single();
 
-    // Build context from cards
-    const context = cards?.map(card => 
-      `Title: ${card.title}\nSummary: ${card.summary}\nTags: ${(card.tags || []).join(', ')}`
-    ).join('\n\n') || 'No knowledge cards found.';
+      if (cardError) throw cardError;
+      
+      context = providedContext || card?.metadata?.text || card?.summary || 'No content available.';
+    } else {
+      // Get all user's knowledge cards for general queries
+      const { data: cards, error: cardsError } = await supabase
+        .from('knowledge_cards')
+        .select('*')
+        .eq('user_id', user.id);
+
+      if (cardsError) throw cardsError;
+
+      context = cards?.map(card => 
+        `Title: ${card.title}\nSummary: ${card.summary}\nTags: ${(card.tags || []).join(', ')}`
+      ).join('\n\n') || 'No knowledge cards found.';
+    }
+
+    // Build messages array with history
+    const messages: Array<{ role: string; content: string }> = [
+      {
+        role: 'system',
+        content: `You are a helpful assistant that answers questions based on the following content. Be concise and accurate.
+
+CONTENT:
+${context.substring(0, 12000)}
+
+Answer based on this content. If something isn't covered, say so politely.`
+      }
+    ];
+
+    // Add history if provided
+    if (history && Array.isArray(history)) {
+      for (const msg of history) {
+        messages.push({ role: msg.role, content: msg.content });
+      }
+    }
+
+    messages.push({ role: 'user', content: userMessage });
 
     // Call Lovable AI
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
@@ -50,18 +88,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a helpful assistant that answers questions based on the user's saved knowledge. 
-Here is their knowledge base:
-
-${context}
-
-Answer questions based on this knowledge. If the answer isn't in the knowledge base, say so politely.`
-          },
-          { role: 'user', content: question }
-        ],
+        messages,
       }),
     });
 
