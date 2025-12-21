@@ -1,9 +1,10 @@
 import { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Share, Copy, ExternalLink, Clock, Play } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Share, Copy, ExternalLink, Clock, Play, AlertTriangle, CheckCircle } from "lucide-react";
 import { toast } from "sonner";
-import { KnowledgeCard } from "@/lib/storage";
+import { KnowledgeCard, CardMetadata } from "@/lib/storage";
 
 interface ReaderViewProps {
   card: KnowledgeCard;
@@ -16,17 +17,24 @@ interface TranscriptSegment {
   isHeader?: boolean;
 }
 
+type TranscriptSource = 'youtube-api' | 'youtubetranscript.com' | 'proxy-api' | 'perplexity-search' | 'none';
+
 const ReaderView = ({ card }: ReaderViewProps) => {
-  const readingTime = Math.ceil((card.metadata?.text?.split(' ').length || 0) / 200);
+  const textContent = card.metadata?.text || '';
+  const transcriptSource = (card.metadata?.transcriptSource as TranscriptSource) || 
+    (textContent.length > 200 ? 'unknown' : 'none');
+  const hasFullTranscript = card.metadata?.hasFullTranscript ?? (textContent.length > 200);
+  
+  const readingTime = Math.ceil((textContent.split(' ').length || 0) / 200);
   const isYouTube = card.url?.includes('youtube.com') || card.url?.includes('youtu.be');
   
   const segments = useMemo(() => {
-    if (!card.metadata?.text) return [];
-    return parseContentToSegments(card.metadata.text, isYouTube);
-  }, [card.metadata?.text, isYouTube]);
+    if (!textContent) return [];
+    return parseContentToSegments(textContent, isYouTube);
+  }, [textContent, isYouTube]);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(card.metadata?.text || '');
+    navigator.clipboard.writeText(textContent);
     toast.success('Content copied to clipboard');
   };
 
@@ -50,6 +58,24 @@ const ReaderView = ({ card }: ReaderViewProps) => {
               {readingTime} min read
             </span>
           )}
+          {isYouTube && (
+            <Badge 
+              variant={hasFullTranscript ? "secondary" : "outline"} 
+              className="text-xs flex items-center gap-1"
+            >
+              {hasFullTranscript ? (
+                <>
+                  <CheckCircle className="w-3 h-3" />
+                  Full transcript
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="w-3 h-3" />
+                  Web summary
+                </>
+              )}
+            </Badge>
+          )}
         </div>
         <div className="flex items-center gap-1">
           <Button variant="ghost" size="sm" onClick={handleCopy}>
@@ -69,6 +95,19 @@ const ReaderView = ({ card }: ReaderViewProps) => {
           )}
         </div>
       </div>
+
+      {/* Transcript Warning */}
+      {isYouTube && !hasFullTranscript && (
+        <div className="mx-6 mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-start gap-3">
+          <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+          <div className="text-sm">
+            <p className="font-medium text-amber-600 dark:text-amber-400">Transcript unavailable</p>
+            <p className="text-muted-foreground mt-1">
+              YouTube blocked transcript access. The summary was generated using web search information.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Reader Content */}
       <ScrollArea className="flex-1">

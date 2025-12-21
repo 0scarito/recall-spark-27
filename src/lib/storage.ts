@@ -1,5 +1,13 @@
 import { supabase } from "@/integrations/supabase/client";
 
+export type CardMetadata = {
+  image?: string | null;
+  text?: string | null;
+  siteName?: string | null;
+  transcriptSource?: 'youtube-api' | 'youtubetranscript.com' | 'proxy-api' | 'perplexity-search' | 'none';
+  hasFullTranscript?: boolean;
+};
+
 export type KnowledgeCard = {
   id: string;
   title: string;
@@ -7,7 +15,7 @@ export type KnowledgeCard = {
   summary?: string;
   tags?: string[];
   content_type?: string;
-  metadata?: { image?: string | null; text?: string | null; siteName?: string | null };
+  metadata?: CardMetadata;
   created_at: string;
   user_id?: string;
 };
@@ -25,7 +33,7 @@ export async function loadCards(): Promise<KnowledgeCard[]> {
   
   return (data || []).map(card => ({
     ...card,
-    metadata: card.metadata as { image?: string | null; text?: string | null; siteName?: string | null }
+    metadata: card.metadata as CardMetadata
   }));
 }
 
@@ -90,7 +98,7 @@ export async function getCard(id: string): Promise<KnowledgeCard | null> {
 
   return data ? {
     ...data,
-    metadata: data.metadata as { image?: string | null; text?: string | null; siteName?: string | null }
+    metadata: data.metadata as CardMetadata
   } : null;
 }
 
