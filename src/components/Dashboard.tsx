@@ -1,13 +1,14 @@
 import { useState, useEffect, useMemo } from "react";
-// Remplace les appels Supabase par le stockage local
 import { loadCards as loadLocalCards, updateCardTags, deleteCards as deleteLocalCards } from "@/lib/storage";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Brain, List, Grid2X2, Network } from "lucide-react";
+import { Plus, Search, Brain, List, Grid2X2, Network, ChevronLeft, ChevronRight, PenLine } from "lucide-react";
 import KnowledgeCard from "./KnowledgeCard";
-import AddContentDialog from "./AddContentDialog";
+import AddContentDialogV2 from "./AddContentDialogV2";
+import SearchModal from "./SearchModal";
+import SelectionBanner from "./SelectionBanner";
+import TagHierarchySidebar from "./TagHierarchySidebar";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import CardDetailDrawer from "./CardDetailDrawer";
@@ -15,7 +16,7 @@ import { useNavigate } from "react-router-dom";
 import ChatInterface from "./ChatInterface";
 import ConnectionsGraph from "./ConnectionsGraph";
 import DraggableCard from "./DraggableCard";
-import { DndContext, DragEndEvent, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors, useDroppable } from "@dnd-kit/core";
+import { DndContext, DragEndEvent, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 
 const Dashboard = () => {
@@ -23,6 +24,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [orderBy, setOrderBy] = useState<"newest" | "oldest" | "title">("newest");
@@ -34,7 +36,6 @@ const Dashboard = () => {
   const [activeView, setActiveView] = useState<"cards" | "chat" | "graph">("cards");
   const [draggedCard, setDraggedCard] = useState<any | null>(null);
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [selectionMode, setSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const sensors = useSensors(
@@ -56,22 +57,28 @@ const Dashboard = () => {
 
   useEffect(() => {
     loadCards();
-    // Support bookmarklet via ?add={url}
     const params = new URLSearchParams(window.location.search);
     const addUrl = params.get('add');
     if (addUrl) {
       setPrefillUrl(addUrl);
       setAddDialogOpen(true);
-      // Clean URL
       const url = new URL(window.location.href);
       url.searchParams.delete('add');
       window.history.replaceState({}, '', url.toString());
     }
   }, []);
 
-  // Sign out is handled globally in AppLayout; keep Dashboard focused on content
-
-  // Collections side actions removed with the collections sidebar
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
+        e.preventDefault();
+        setAddDialogOpen(true);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
 
   const handleDragStart = (event: any) => {
     const card = cards.find((c) => c.id === event.active.id);
@@ -117,15 +124,6 @@ const Dashboard = () => {
     return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).map(([name]) => name);
   }, [cards]);
 
-  const availableCollections = useMemo(() => {
-    const set = new Set<string>();
-    for (const card of cards) {
-      const tags: string[] = Array.isArray(card.tags) ? card.tags : [];
-      for (const tag of tags) if (tag.startsWith('collection:')) set.add(tag.replace('collection:', ''));
-    }
-    return Array.from(set).sort();
-  }, [cards]);
-
   const filteredCards = useMemo(() => {
     let result = cards.filter((card) =>
       card.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -167,6 +165,8 @@ const Dashboard = () => {
 
   const clearSelection = () => setSelectedIds(new Set());
 
+  const selectionEnabled = selectedIds.size > 0;
+
   const pinSelected = async () => {
     const ids = Array.from(selectedIds);
     if (ids.length === 0) return;
@@ -191,272 +191,304 @@ const Dashboard = () => {
     loadCards();
   };
 
-  return (
-    <div className="w-full">
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragStart={handleDragStart}
-            onDragEnd={handleDragEnd}
-          >
-            <div className="w-full">
-            {/* Top Bar */}
-            <div className="border-b border-border px-6 py-4 flex items-center justify-between gap-4">
-              <div className="flex-1 flex items-center gap-4">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                  <Input
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Search your knowledge..."
-                    className="pl-10 bg-card text-foreground border-border"
-                  />
-                </div>
-                {/* Filtered Tags */}
-                {selectedTags.length > 0 && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-sm text-muted-foreground">Tags:</span>
-                    {selectedTags.map((t) => (
-                      <Badge 
-                        key={t} 
-                        variant="secondary" 
-                        className="bg-secondary text-secondary-foreground cursor-pointer hover:bg-secondary/80"
-                        onClick={() => setSelectedTags(selectedTags.filter((x) => x !== t))}
-                      >
-                        {t}
-                      </Badge>
-                    ))}
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={() => setSelectedTags([])}
-                      className="text-sm"
-                    >
-                      Clear all
-                    </Button>
-                  </div>
-                )}
-              </div>
-              
-              <div className="flex items-center gap-2">
-                <Button onClick={() => setAddDialogOpen(true)} className="bg-primary text-primary-foreground hover:bg-primary/90">
-                  Add Content
-                </Button>
-              </div>
-            </div>
+  const handleSearch = (query: string, filters: any) => {
+    setSearchQuery(query);
+    if (filters.tags?.length > 0) {
+      setSelectedTags(filters.tags);
+    }
+  };
 
-            {/* Controls Bar */}
-            <div className="px-6 py-3 flex items-center justify-between gap-2 border-b border-border">
-              <div className="flex items-center gap-2">
-                <Button 
-                  variant={selectionMode ? "secondary" : "ghost"} 
-                  size="sm" 
-                  onClick={() => { setSelectionMode((v) => !v); clearSelection(); }}
+  return (
+    <div className="w-full h-full flex flex-col">
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        {/* Top Bar - Clean and minimal */}
+        <div className="border-b border-border px-6 py-3 flex items-center justify-between gap-4 flex-shrink-0">
+          <div className="flex-1" />
+          
+          <div className="flex items-center gap-2">
+            {/* Search Button */}
+            <Button 
+              variant="outline" 
+              size="icon"
+              className="h-9 w-9"
+              onClick={() => setSearchModalOpen(true)}
+            >
+              <Search className="w-4 h-4" />
+            </Button>
+            
+            {/* Add Content Button */}
+            <Button onClick={() => setAddDialogOpen(true)} className="gap-2">
+              Add Content
+              <PenLine className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Controls Bar - Compact, right-aligned */}
+        <div className="px-6 py-2 flex items-center justify-end gap-3 border-b border-border flex-shrink-0">
+          {/* Active tag filters */}
+          {selectedTags.length > 0 && (
+            <div className="flex-1 flex items-center gap-2 flex-wrap mr-auto">
+              {selectedTags.map((t) => (
+                <Badge 
+                  key={t} 
+                  variant="secondary" 
+                  className="cursor-pointer hover:bg-secondary/80"
+                  onClick={() => setSelectedTags(selectedTags.filter((x) => x !== t))}
                 >
-                  {selectionMode ? 'Cancel selection' : 'Select'}
-                </Button>
-                {selectionMode && selectedIds.size > 0 && (
-                  <>
-                    <Button size="sm" variant="outline" onClick={pinSelected}>Pin</Button>
-                    <Button size="sm" variant="destructive" onClick={deleteSelected}>Delete</Button>
-                  </>
-                )}
-              </div>
+                  {t} ×
+                </Badge>
+              ))}
               <Button 
-                variant={viewMode === "list" ? "secondary" : "ghost"} 
-                size="sm"
-                onClick={() => setViewMode("list")}
-                className="gap-2"
+                variant="ghost" 
+                size="sm" 
+                className="text-xs h-6 px-2"
+                onClick={() => setSelectedTags([])}
               >
+                Clear
+              </Button>
+            </div>
+          )}
+          
+          {/* View Mode Toggle - Single button */}
+          <Button 
+            variant="ghost" 
+            size="sm"
+            className="gap-2 h-8"
+            onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
+          >
+            {viewMode === "grid" ? (
+              <>
                 <List className="w-4 h-4" />
                 List
-              </Button>
-              <Button 
-                variant={viewMode === "grid" ? "secondary" : "ghost"} 
-                size="sm"
-                onClick={() => setViewMode("grid")}
-                className="gap-2"
-              >
+              </>
+            ) : (
+              <>
                 <Grid2X2 className="w-4 h-4" />
                 Grid
-              </Button>
-              <Select value={orderBy} onValueChange={(v: any) => setOrderBy(v)}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="newest">Newest</SelectItem>
-                  <SelectItem value="oldest">Oldest</SelectItem>
-                  <SelectItem value="title">Title</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+              </>
+            )}
+          </Button>
 
-            {/* Content */}
-            <div className="h-full flex">
-              {sidebarOpen ? (
-                <aside className="hidden md:block w-64 border-r border-border p-4 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-foreground">Collections</h3>
-                    <Button size="sm" variant="ghost" onClick={() => setSidebarOpen(false)}>Hide</Button>
-                  </div>
-                  <div className="space-y-1">
-                    <Button
-                      key="all"
-                      variant={!selectedCollection ? 'secondary' : 'ghost'}
-                      className="w-full justify-start"
-                      onClick={() => setSelectedCollection(null)}
-                    >All</Button>
-                    {availableCollections.map((c) => (
-                      <Button key={c} variant={selectedCollection === c ? 'secondary' : 'ghost'} className="w-full justify-start" onClick={() => setSelectedCollection(c)}>
-                        {c}
-                      </Button>
-                    ))}
-                  </div>
-                  <div className="pt-4">
-                    <h3 className="text-sm font-semibold text-foreground mb-2">Tags</h3>
-                    <div className="flex flex-wrap gap-2">
-                      {availableTags.slice(0, 40).map((t) => (
-                        <Badge key={t} className="cursor-pointer" onClick={() => setSelectedTags(Array.from(new Set([...selectedTags, t])))}>
-                          {t}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                </aside>
-              ) : (
-                <div className="hidden md:flex flex-col items-center justify-start px-2 border-r border-border">
-                  <Button size="sm" variant="ghost" onClick={() => setSidebarOpen(true)}>Show</Button>
-                </div>
-              )}
+          {/* Order By */}
+          <Select value={orderBy} onValueChange={(v: any) => setOrderBy(v)}>
+            <SelectTrigger className="w-[120px] h-8 text-xs bg-transparent border-border">
+              <span className="text-muted-foreground mr-1">Sort:</span>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="newest">Newest</SelectItem>
+              <SelectItem value="oldest">Oldest</SelectItem>
+              <SelectItem value="title">Title</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
-              <div className="flex-1">
-              {activeView === "chat" ? (
-                <ChatInterface />
-              ) : activeView === "graph" ? (
-                <div className="px-6 py-6 h-full flex flex-col">
-                  <div className="mb-4">
-                    <h2 className="text-xl font-semibold text-foreground">Knowledge Graph</h2>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      Explore connections between your knowledge cards based on shared tags
-                    </p>
-                  </div>
-                  {selectedCard ? (
-                    <ConnectionsGraph 
-                      card={selectedCard} 
-                      allCards={cards}
-                      onSelectCard={(c) => {
-                        setSelectedCard(c);
-                        setDetailOpen(true);
-                      }}
-                    />
-                  ) : (
-                    <div className="flex-1 flex items-center justify-center">
-                      <div className="text-center">
-                        <Network className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-                        <p className="text-muted-foreground">
-                          Select a card to view its connections
-                        </p>
-                      </div>
-                    </div>
-                  )}
+        {/* Main Content Area */}
+        <div className="flex-1 flex overflow-hidden">
+          {/* Sidebar */}
+          <aside className={`hidden md:flex flex-col border-r border-border transition-all duration-200 ${sidebarOpen ? 'w-64' : 'w-0'}`}>
+            {sidebarOpen && (
+              <div className="flex-1 overflow-y-auto p-4">
+                <TagHierarchySidebar
+                  cards={cards}
+                  selectedTags={selectedTags}
+                  onTagSelect={setSelectedTags}
+                  selectedCollection={selectedCollection}
+                  onCollectionSelect={setSelectedCollection}
+                />
+              </div>
+            )}
+          </aside>
+          
+          {/* Sidebar Toggle */}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="hidden md:flex items-center justify-center w-4 hover:bg-muted/50 transition-colors border-r border-border"
+          >
+            {sidebarOpen ? (
+              <ChevronLeft className="w-3 h-3 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="w-3 h-3 text-muted-foreground" />
+            )}
+          </button>
+
+          {/* Cards Area */}
+          <div className="flex-1 overflow-y-auto">
+            {activeView === "chat" ? (
+              <ChatInterface />
+            ) : activeView === "graph" ? (
+              <div className="px-6 py-6 h-full flex flex-col">
+                <div className="mb-4">
+                  <h2 className="text-xl font-semibold text-foreground">Knowledge Graph</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Explore connections between your knowledge cards based on shared tags
+                  </p>
                 </div>
-              ) : (
-                <div className="px-6 py-6">
-                  {loading ? (
-                    <div className="text-center py-20">
-                      <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
-                      <p className="mt-4 text-muted-foreground">Loading...</p>
-                    </div>
-                  ) : filteredCards.length === 0 ? (
-                    <div className="text-center py-20">
-                      <Brain className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
-                      <h3 className="text-xl font-semibold mb-2">
-                        {searchQuery ? 'No results found' : 'Your knowledge base is empty'}
-                      </h3>
-                      <p className="text-muted-foreground mb-6">
-                        {searchQuery ? 'Try a different search' : 'Start by adding your first piece of content'}
+                {selectedCard ? (
+                  <ConnectionsGraph 
+                    card={selectedCard} 
+                    allCards={cards}
+                    onSelectCard={(c) => {
+                      setSelectedCard(c);
+                      setDetailOpen(true);
+                    }}
+                  />
+                ) : (
+                  <div className="flex-1 flex items-center justify-center">
+                    <div className="text-center">
+                      <Network className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                      <p className="text-muted-foreground">
+                        Select a card to view its connections
                       </p>
-                      {!searchQuery && (
-                        <Button onClick={() => setAddDialogOpen(true)}>
-                          <Plus className="w-4 h-4 mr-2" />
-                          Add Content
-                        </Button>
-                      )}
                     </div>
-                  ) : (
-                    <SortableContext items={filteredCards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
-                      <div className="space-y-8">
-                        {Object.entries(
-                          filteredCards.reduce((acc: Record<string, any[]>, card) => {
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="px-6 py-6">
+                {loading ? (
+                  <div className="text-center py-20">
+                    <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-primary border-r-transparent"></div>
+                    <p className="mt-4 text-muted-foreground">Loading...</p>
+                  </div>
+                ) : filteredCards.length === 0 ? (
+                  <div className="text-center py-20">
+                    <Brain className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
+                    <h3 className="text-xl font-semibold mb-2">
+                      {searchQuery ? 'No results found' : 'Your knowledge base is empty'}
+                    </h3>
+                    <p className="text-muted-foreground mb-6">
+                      {searchQuery ? 'Try a different search' : 'Start by adding your first piece of content'}
+                    </p>
+                    {!searchQuery && (
+                      <Button onClick={() => setAddDialogOpen(true)}>
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Content
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <SortableContext items={filteredCards.map((c) => c.id)} strategy={verticalListSortingStrategy}>
+                    <div className="space-y-8">
+                      {/* Add Content Card - first in grid */}
+                      <div className="space-y-4">
+                        <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Today</h2>
+                        <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" : "space-y-3"}>
+                          {/* Add Content Card */}
+                          <button
+                            onClick={() => setAddDialogOpen(true)}
+                            className="border-2 border-dashed border-border rounded-lg p-8 flex flex-col items-center justify-center gap-3 hover:border-primary/50 hover:bg-muted/30 transition-all min-h-[200px]"
+                          >
+                            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                              <Plus className="w-6 h-6 text-primary" />
+                            </div>
+                            <span className="text-sm font-medium text-muted-foreground">Add Content</span>
+                          </button>
+                          
+                          {/* Cards from Today */}
+                          {filteredCards
+                            .filter(card => format(new Date(card.created_at), "yyyy-MM-dd") === format(new Date(), "yyyy-MM-dd"))
+                            .map((card) => (
+                              <DraggableCard
+                                key={card.id}
+                                card={card}
+                                onClick={() => navigate(`/card/${card.id}`)}
+                                selectionEnabled={true}
+                                selected={selectedIds.has(card.id)}
+                                onToggleSelect={toggleSelect}
+                              />
+                            ))}
+                        </div>
+                      </div>
+
+                      {/* Remaining cards grouped by date */}
+                      {Object.entries(
+                        filteredCards
+                          .filter(card => format(new Date(card.created_at), "yyyy-MM-dd") !== format(new Date(), "yyyy-MM-dd"))
+                          .reduce((acc: Record<string, any[]>, card) => {
                             const key = format(new Date(card.created_at), "EEE MMM dd yyyy");
                             if (!acc[key]) acc[key] = [];
                             acc[key].push(card);
                             return acc;
                           }, {})
-                        ).map(([dateLabel, items]: [string, any[]]) => (
-                          <div key={dateLabel} className="space-y-4">
-                            <h2 className="text-base font-medium text-foreground">{dateLabel}</h2>
-                            <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" : "space-y-4"}>
-                              {items.map((card) => (
-                                <DraggableCard
-                                  key={card.id}
-                                  card={card}
-                                  onClick={() => {
-                                    navigate(`/card/${card.id}`);
-                                  }}
-                                  selectionEnabled={selectionMode}
-                                  selected={selectedIds.has(card.id)}
-                                  onToggleSelect={toggleSelect}
-                                />
-                              ))}
-                            </div>
+                      ).map(([dateLabel, items]: [string, any[]]) => (
+                        <div key={dateLabel} className="space-y-4">
+                          <h2 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">{dateLabel}</h2>
+                          <div className={viewMode === "grid" ? "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4" : "space-y-3"}>
+                            {items.map((card) => (
+                              <DraggableCard
+                                key={card.id}
+                                card={card}
+                                onClick={() => navigate(`/card/${card.id}`)}
+                                selectionEnabled={true}
+                                selected={selectedIds.has(card.id)}
+                                onToggleSelect={toggleSelect}
+                              />
+                            ))}
                           </div>
-                        ))}
-                      </div>
-                    </SortableContext>
-                  )}
-                </div>
-              )}
+                        </div>
+                      ))}
+                    </div>
+                  </SortableContext>
+                )}
               </div>
+            )}
+          </div>
+        </div>
+
+        <DragOverlay>
+          {draggedCard && (
+            <div className="opacity-80">
+              <KnowledgeCard
+                title={draggedCard.title}
+                summary={draggedCard.summary}
+                url={draggedCard.url}
+                tags={draggedCard.tags || []}
+                contentType={draggedCard.content_type}
+                createdAt={draggedCard.created_at}
+                onClick={() => {}}
+              />
             </div>
-            </div>
-            <DragOverlay>
-              {draggedCard ? (
-                <div className="opacity-80">
-                  <KnowledgeCard
-                    title={draggedCard.title}
-                    summary={draggedCard.summary}
-                    url={draggedCard.url}
-                    tags={draggedCard.tags || []}
-                    contentType={draggedCard.content_type}
-                    createdAt={draggedCard.created_at}
-                    onClick={() => {}}
-                    thumbnail={draggedCard.content_type === 'youtube' ? (function(){
-                      const m = (draggedCard.url || '').match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{6,})/);
-                      return m ? `https://img.youtube.com/vi/${m[1]}/hqdefault.jpg` : (draggedCard.metadata?.image || undefined);
-                    })() : (draggedCard?.metadata?.image || undefined)}
-                  />
-                </div>
-              ) : null}
-            </DragOverlay>
-          </DndContext>
-        <AddContentDialog
-          open={addDialogOpen}
-          onOpenChange={setAddDialogOpen}
-          onSuccess={loadCards}
-          initialUrl={prefillUrl}
-        />
-        <CardDetailDrawer
-          open={detailOpen}
-          onOpenChange={setDetailOpen}
-          card={selectedCard}
-          allCards={cards}
-          onSelectCard={(c) => {
-            setSelectedCard(c);
-            setDetailOpen(true);
-          }}
-        />
+          )}
+        </DragOverlay>
+      </DndContext>
+
+      {/* Selection Banner */}
+      <SelectionBanner
+        count={selectedIds.size}
+        onPin={pinSelected}
+        onDelete={deleteSelected}
+        onClear={clearSelection}
+      />
+
+      {/* Search Modal */}
+      <SearchModal
+        open={searchModalOpen}
+        onOpenChange={setSearchModalOpen}
+        onSearch={handleSearch}
+        availableTags={availableTags}
+      />
+
+      {/* Add Content Dialog */}
+      <AddContentDialogV2
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+        onSuccess={loadCards}
+        initialUrl={prefillUrl}
+      />
+
+      {/* Card Detail Drawer */}
+      <CardDetailDrawer
+        card={selectedCard}
+        open={detailOpen}
+        onOpenChange={setDetailOpen}
+      />
     </div>
   );
 };

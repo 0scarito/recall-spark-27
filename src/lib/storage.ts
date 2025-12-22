@@ -6,6 +6,7 @@ export type CardMetadata = {
   siteName?: string | null;
   transcriptSource?: 'youtube-api' | 'youtubetranscript.com' | 'proxy-api' | 'perplexity-search' | 'none';
   hasFullTranscript?: boolean;
+  wikidata_id?: string | null;
 };
 
 export type KnowledgeCard = {
