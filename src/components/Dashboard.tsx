@@ -3,11 +3,12 @@ import { loadCards as loadLocalCards, updateCardTags, deleteCards as deleteLocal
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Brain, List, Grid2X2, Network, PenLine } from "lucide-react";
+import { Plus, Search, Brain, List, Grid2X2, Network, ChevronLeft, ChevronRight, Hash, Folder } from "lucide-react";
 import KnowledgeCard from "./KnowledgeCard";
 import AddContentDialogV2 from "./AddContentDialogV2";
 import SearchModal from "./SearchModal";
 import SelectionBanner from "./SelectionBanner";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import CardDetailDrawer from "./CardDetailDrawer";
@@ -48,6 +49,7 @@ const Dashboard = () => {
   const [activeView, setActiveView] = useState<"cards" | "chat" | "graph">("cards");
   const [draggedCard, setDraggedCard] = useState<any | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -297,6 +299,89 @@ const Dashboard = () => {
 
         {/* Main Content Area */}
         <div className="flex-1 flex overflow-hidden">
+          {/* Sidebar */}
+          <aside 
+            className={`hidden md:flex flex-col border-r border-border bg-muted/20 transition-all duration-200 ${
+              sidebarOpen ? 'w-56' : 'w-0 overflow-hidden'
+            }`}
+          >
+            {sidebarOpen && (
+              <ScrollArea className="flex-1 p-4">
+                <div className="space-y-6">
+                  {/* Categories */}
+                  <div>
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
+                      Categories
+                    </h3>
+                    <div className="space-y-0.5">
+                      {CATEGORIES.filter(cat => cat === "All" || (categoryCounts[cat] || 0) > 0).map((cat) => (
+                        <button
+                          key={cat}
+                          onClick={() => setSelectedCategory(cat)}
+                          className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
+                            selectedCategory === cat
+                              ? "bg-primary/10 text-primary font-medium"
+                              : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                          }`}
+                        >
+                          <span className="flex items-center gap-2 truncate">
+                            <Hash className="w-3.5 h-3.5 flex-shrink-0" />
+                            <span className="truncate">{cat}</span>
+                          </span>
+                          <span className="text-xs opacity-60">{categoryCounts[cat] || 0}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Collections */}
+                  <div>
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
+                      Collections
+                    </h3>
+                    <div className="space-y-0.5">
+                      {(() => {
+                        const collections = new Set<string>();
+                        for (const card of cards) {
+                          const tags: string[] = Array.isArray(card.tags) ? card.tags : [];
+                          for (const tag of tags) {
+                            if (tag.startsWith('collection:')) {
+                              collections.add(tag.replace('collection:', ''));
+                            }
+                          }
+                        }
+                        return Array.from(collections).sort().map((c) => (
+                          <button
+                            key={c}
+                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
+                          >
+                            <Folder className="w-3.5 h-3.5" />
+                            <span className="truncate">{c}</span>
+                          </button>
+                        ));
+                      })()}
+                      {cards.every(c => !c.tags?.some((t: string) => t.startsWith('collection:'))) && (
+                        <p className="text-xs text-muted-foreground/60 px-2 py-1">No collections yet</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </ScrollArea>
+            )}
+          </aside>
+          
+          {/* Sidebar Toggle */}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="hidden md:flex items-center justify-center w-4 hover:bg-muted/50 transition-colors border-r border-border"
+          >
+            {sidebarOpen ? (
+              <ChevronLeft className="w-3 h-3 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="w-3 h-3 text-muted-foreground" />
+            )}
+          </button>
+
           {/* Cards Area */}
           <div className="flex-1 overflow-y-auto">
             {activeView === "chat" ? (
