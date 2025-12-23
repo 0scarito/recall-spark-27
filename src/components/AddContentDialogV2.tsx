@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { createCard } from "@/lib/storage";
-import { Loader2, Link as LinkIcon, Search, FileText, Import, PenLine, Youtube, Podcast, Globe, Video, FileIcon, FileSpreadsheet, Presentation, Music } from "lucide-react";
+import { Loader2, Link as LinkIcon, Search, FileText, Import, PenLine, Youtube, Podcast, Globe, Video, FileIcon, Instagram, Mic, Music } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,29 +20,54 @@ interface AddContentDialogV2Props {
 
 const SUPPORTED_SOURCES = [
   { icon: Youtube, label: "YouTube Videos/Shorts" },
+  { icon: Instagram, label: "Instagram Reels" },
   { icon: Podcast, label: "Apple and Spotify Podcasts" },
   { icon: Globe, label: "Websites, Articles & Blogs" },
   { icon: Video, label: "Vimeo Videos" },
-  { icon: FileText, label: "Online PDFs" },
-  { icon: FileSpreadsheet, label: "Google Docs" },
-  { icon: Presentation, label: "Google Slides" },
   { icon: Music, label: "TikTok Videos" },
+];
+
+const CATEGORIES = [
+  "Finance",
+  "Personal Development",
+  "Technology", 
+  "Health",
+  "Business",
+  "Learning",
+  "Creative",
+  "Entertainment",
+  "Other"
 ];
 
 const AddContentDialogV2 = ({ open, onOpenChange, onSuccess, initialUrl }: AddContentDialogV2Props) => {
   const [loading, setLoading] = useState(false);
   const [url, setUrl] = useState(initialUrl || "");
   const [file, setFile] = useState<File | null>(null);
+  const [audioFile, setAudioFile] = useState<File | null>(null);
   const [summaryStyle, setSummaryStyle] = useState<"concise" | "detailed" | "bullet">("concise");
+  const [selectedCategory, setSelectedCategory] = useState<string>("Other");
   const [wikiQuery, setWikiQuery] = useState("");
   const [noteTitle, setNoteTitle] = useState("");
   const [noteContent, setNoteContent] = useState("");
   const [activeTab, setActiveTab] = useState("url");
+  const [isRecording, setIsRecording] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
   // Sync initial URL when dialog opens
   if (open && initialUrl && url !== initialUrl) {
     setUrl(initialUrl);
   }
+
+  const detectContentType = (url: string): string => {
+    if (/(?:youtube\.com|youtu\.be)\//i.test(url)) return 'youtube';
+    if (/instagram\.com\/(?:reel|p)\//i.test(url)) return 'instagram';
+    if (/tiktok\.com/i.test(url)) return 'tiktok';
+    if (/vimeo\.com/i.test(url)) return 'vimeo';
+    if (/\.pdf(\?|$)/i.test(url)) return 'pdf';
+    if (/spotify\.com|podcasts\.apple\.com/i.test(url)) return 'podcast';
+    return 'article';
+  };
 
   const handleUrlSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,19 +75,17 @@ const AddContentDialogV2 = ({ open, onOpenChange, onSuccess, initialUrl }: AddCo
 
     setLoading(true);
     try {
+      const contentType = detectContentType(url);
+      
       const { data: summaryData, error } = await supabase.functions.invoke('summarize-content', {
-        body: { url, style: summaryStyle }
+        body: { url, style: summaryStyle, category: selectedCategory }
       });
 
       if (error) throw error;
       if (!summaryData) throw new Error('No data returned from summarization');
 
-      const isYouTube = /(?:youtube\.com|youtu\.be)\//i.test(url);
-      const isPDF = /\.pdf(\?|$)/i.test(url) || summaryData.contentType === 'pdf';
-      const contentType = isPDF ? 'pdf' : (isYouTube ? 'youtube' : 'article');
-
       let thumbnailImage = null;
-      if (isYouTube) {
+      if (contentType === 'youtube') {
         const match = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
         if (match) {
           thumbnailImage = `https://img.youtube.com/vi/${match[1]}/maxresdefault.jpg`;
@@ -75,11 +98,13 @@ const AddContentDialogV2 = ({ open, onOpenChange, onSuccess, initialUrl }: AddCo
         url,
         summary: summaryData.summary,
         content_type: contentType,
-        tags: Array.isArray(summaryData.tags) ? summaryData.tags : [],
+        tags: [selectedCategory], // Single category tag
         metadata: {
           image: thumbnailImage || summaryData.meta?.ogImage || summaryData.meta?.favicon || null,
           siteName: summaryData.meta?.siteName || null,
           text: summaryData.text || null,
+          transcriptSource: summaryData.meta?.transcriptSource,
+          hasFullTranscript: summaryData.meta?.hasFullTranscript,
         },
         created_at: new Date().toISOString(),
       });
@@ -117,7 +142,7 @@ const AddContentDialogV2 = ({ open, onOpenChange, onSuccess, initialUrl }: AddCo
         title: data.title,
         summary: data.summary,
         content_type: file.type.startsWith('image/') ? 'image' : 'pdf',
-        tags: data.tags || [],
+        tags: [selectedCategory],
         metadata: {
           image: data.image || null,
           text: data.text || null,
@@ -138,13 +163,88 @@ const AddContentDialogV2 = ({ open, onOpenChange, onSuccess, initialUrl }: AddCo
     }
   };
 
+  const handleAudioSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!audioFile) return;
+
+    setLoading(true);
+    try {
+      const base64Audio = await fileToBase64(audioFile);
+      
+      const { data, error } = await supabase.functions.invoke('transcribe-audio', {
+        body: { 
+          audio: base64Audio.split(',')[1], // Remove data URL prefix
+          fileName: audioFile.name,
+        }
+      });
+
+      if (error) throw error;
+
+      await createCard({
+        id: crypto.randomUUID(),
+        title: data.title || audioFile.name.replace(/\.[^/.]+$/, ""),
+        summary: data.summary,
+        content_type: 'audio',
+        tags: [selectedCategory],
+        metadata: {
+          text: data.transcript || null,
+          siteName: null,
+          image: null,
+        },
+        created_at: new Date().toISOString(),
+      });
+
+      toast.success('Audio transcribed and added!');
+      setAudioFile(null);
+      onOpenChange(false);
+      onSuccess();
+    } catch (error: any) {
+      console.error('Error transcribing audio:', error);
+      toast.error(error.message || 'Failed to transcribe audio');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioFile = new File([audioBlob], 'recording.webm', { type: 'audio/webm' });
+        setAudioFile(audioFile);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error('Error starting recording:', error);
+      toast.error('Could not access microphone');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
   const handleWikiSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!wikiQuery.trim()) return;
 
     setLoading(true);
     try {
-      // Use Wikipedia API to search
       const searchUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(wikiQuery)}`;
       const response = await fetch(searchUrl);
       
@@ -158,7 +258,7 @@ const AddContentDialogV2 = ({ open, onOpenChange, onSuccess, initialUrl }: AddCo
         url: data.content_urls?.desktop?.page || `https://en.wikipedia.org/wiki/${encodeURIComponent(wikiQuery)}`,
         summary: data.extract,
         content_type: 'wiki',
-        tags: ['wiki', data.type || 'general'],
+        tags: [selectedCategory],
         metadata: {
           image: data.thumbnail?.source || null,
           text: data.extract_html || data.extract,
@@ -191,7 +291,7 @@ const AddContentDialogV2 = ({ open, onOpenChange, onSuccess, initialUrl }: AddCo
         title: noteTitle,
         summary: noteContent.slice(0, 200),
         content_type: 'note',
-        tags: ['note'],
+        tags: [selectedCategory],
         metadata: {
           text: noteContent,
           siteName: null,
@@ -225,39 +325,55 @@ const AddContentDialogV2 = ({ open, onOpenChange, onSuccess, initialUrl }: AddCo
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px] max-h-[85vh] overflow-hidden flex flex-col">
-        <DialogHeader className="flex-shrink-0 flex flex-row items-center justify-between">
+        <DialogHeader className="flex-shrink-0 flex flex-row items-center justify-between gap-4">
           <DialogTitle className="text-xl">Add Content</DialogTitle>
-          <Select value={summaryStyle} onValueChange={(v: any) => setSummaryStyle(v)}>
-            <SelectTrigger className="w-[160px] h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="concise">Concise summary</SelectItem>
-              <SelectItem value="detailed">Detailed summary</SelectItem>
-              <SelectItem value="bullet">Bullet points</SelectItem>
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+              <SelectTrigger className="w-[140px] h-8 text-xs">
+                <SelectValue placeholder="Category" />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORIES.map(cat => (
+                  <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={summaryStyle} onValueChange={(v: any) => setSummaryStyle(v)}>
+              <SelectTrigger className="w-[120px] h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="concise">Concise</SelectItem>
+                <SelectItem value="detailed">Detailed</SelectItem>
+                <SelectItem value="bullet">Bullets</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </DialogHeader>
         
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 overflow-hidden flex flex-col">
-          <TabsList className="grid w-full grid-cols-5 flex-shrink-0">
-            <TabsTrigger value="url" className="gap-1.5 text-xs">
+          <TabsList className="grid w-full grid-cols-6 flex-shrink-0">
+            <TabsTrigger value="url" className="gap-1 text-xs">
               <LinkIcon className="w-3.5 h-3.5" />
               URL
             </TabsTrigger>
-            <TabsTrigger value="wiki" className="gap-1.5 text-xs">
+            <TabsTrigger value="audio" className="gap-1 text-xs">
+              <Mic className="w-3.5 h-3.5" />
+              Audio
+            </TabsTrigger>
+            <TabsTrigger value="wiki" className="gap-1 text-xs">
               <Search className="w-3.5 h-3.5" />
               Wiki
             </TabsTrigger>
-            <TabsTrigger value="pdf" className="gap-1.5 text-xs">
+            <TabsTrigger value="pdf" className="gap-1 text-xs">
               <FileText className="w-3.5 h-3.5" />
               PDF
             </TabsTrigger>
-            <TabsTrigger value="import" className="gap-1.5 text-xs">
+            <TabsTrigger value="import" className="gap-1 text-xs">
               <Import className="w-3.5 h-3.5" />
               Import
             </TabsTrigger>
-            <TabsTrigger value="note" className="gap-1.5 text-xs">
+            <TabsTrigger value="note" className="gap-1 text-xs">
               <PenLine className="w-3.5 h-3.5" />
               Note
             </TabsTrigger>
@@ -279,15 +395,68 @@ const AddContentDialogV2 = ({ open, onOpenChange, onSuccess, initialUrl }: AddCo
                 
                 <div className="space-y-2">
                   <p className="text-sm text-muted-foreground font-medium">Supports</p>
-                  <div className="space-y-1">
+                  <div className="grid grid-cols-2 gap-1">
                     {SUPPORTED_SOURCES.map(({ icon: Icon, label }) => (
-                      <div key={label} className="flex items-center gap-3 py-1.5 text-sm text-muted-foreground">
-                        <Icon className="w-4 h-4" />
+                      <div key={label} className="flex items-center gap-2 py-1 text-xs text-muted-foreground">
+                        <Icon className="w-3.5 h-3.5" />
                         <span>{label}</span>
                       </div>
                     ))}
                   </div>
                 </div>
+              </form>
+            </TabsContent>
+
+            <TabsContent value="audio" className="mt-0 space-y-4">
+              <form onSubmit={handleAudioSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Upload Audio or Record</Label>
+                  <div className="border-2 border-dashed border-border rounded-lg p-6 text-center hover:border-primary/50 transition-colors">
+                    <Input
+                      type="file"
+                      accept="audio/*,.mp3,.wav,.m4a,.webm,.ogg"
+                      onChange={(e) => setAudioFile(e.target.files?.[0] || null)}
+                      disabled={loading || isRecording}
+                      className="cursor-pointer"
+                    />
+                    {audioFile && (
+                      <p className="mt-2 text-sm text-muted-foreground">{audioFile.name}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-center gap-4">
+                  <span className="text-sm text-muted-foreground">or</span>
+                </div>
+
+                <div className="flex justify-center">
+                  {isRecording ? (
+                    <Button 
+                      type="button" 
+                      variant="destructive" 
+                      onClick={stopRecording}
+                      className="gap-2"
+                    >
+                      <div className="w-3 h-3 bg-white rounded-full animate-pulse" />
+                      Stop Recording
+                    </Button>
+                  ) : (
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={startRecording}
+                      disabled={loading}
+                      className="gap-2"
+                    >
+                      <Mic className="w-4 h-4" />
+                      Record Audio
+                    </Button>
+                  )}
+                </div>
+
+                <p className="text-xs text-muted-foreground text-center">
+                  Supports MP3, WAV, M4A, WebM, OGG files or direct recording
+                </p>
               </form>
             </TabsContent>
 
@@ -388,11 +557,12 @@ const AddContentDialogV2 = ({ open, onOpenChange, onSuccess, initialUrl }: AddCo
             <Button 
               onClick={(e) => {
                 if (activeTab === "url") handleUrlSubmit(e as any);
+                else if (activeTab === "audio") handleAudioSubmit(e as any);
                 else if (activeTab === "wiki") handleWikiSearch(e as any);
                 else if (activeTab === "pdf") handleFileSubmit(e as any);
                 else if (activeTab === "note") handleNoteSubmit(e as any);
               }}
-              disabled={loading || (activeTab === "url" && !url.trim()) || (activeTab === "wiki" && !wikiQuery.trim()) || (activeTab === "pdf" && !file) || (activeTab === "note" && !noteTitle.trim())}
+              disabled={loading || (activeTab === "url" && !url.trim()) || (activeTab === "wiki" && !wikiQuery.trim()) || (activeTab === "pdf" && !file) || (activeTab === "audio" && !audioFile) || (activeTab === "note" && !noteTitle.trim())}
             >
               {loading ? (
                 <>

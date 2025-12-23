@@ -1,6 +1,7 @@
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import KnowledgeCard from "./KnowledgeCard";
+import { Badge } from "@/components/ui/badge";
 
 interface DraggableCardProps {
   card: any;
@@ -8,9 +9,17 @@ interface DraggableCardProps {
   selectionEnabled?: boolean;
   selected?: boolean;
   onToggleSelect?: (id: string) => void;
+  category?: string;
 }
 
-const DraggableCard = ({ card, onClick, selectionEnabled = false, selected = false, onToggleSelect }: DraggableCardProps) => {
+const DraggableCard = ({ 
+  card, 
+  onClick, 
+  selectionEnabled = false, 
+  selected = false, 
+  onToggleSelect,
+  category,
+}: DraggableCardProps) => {
   const {
     attributes,
     listeners,
@@ -50,11 +59,24 @@ const DraggableCard = ({ card, onClick, selectionEnabled = false, selected = fal
           </svg>
         )}
       </button>
+
+      {/* Category badge - single tag */}
+      {category && (
+        <div className="absolute top-3 right-3 z-10">
+          <Badge 
+            variant="secondary" 
+            className="text-[10px] px-2 py-0.5 bg-background/80 backdrop-blur-sm"
+          >
+            {category}
+          </Badge>
+        </div>
+      )}
+
       <KnowledgeCard
         title={card.title}
         summary={card.summary}
         url={card.url}
-        tags={card.tags || []}
+        tags={[]} 
         contentType={card.content_type}
         createdAt={card.created_at}
         onClick={onClick}

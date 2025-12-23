@@ -3,12 +3,11 @@ import { loadCards as loadLocalCards, updateCardTags, deleteCards as deleteLocal
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Brain, List, Grid2X2, Network, ChevronLeft, ChevronRight, PenLine } from "lucide-react";
+import { Plus, Search, Brain, List, Grid2X2, Network, PenLine } from "lucide-react";
 import KnowledgeCard from "./KnowledgeCard";
 import AddContentDialogV2 from "./AddContentDialogV2";
 import SearchModal from "./SearchModal";
 import SelectionBanner from "./SelectionBanner";
-import TagHierarchySidebar from "./TagHierarchySidebar";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import CardDetailDrawer from "./CardDetailDrawer";
@@ -19,23 +18,35 @@ import DraggableCard from "./DraggableCard";
 import { DndContext, DragEndEvent, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 
+// Category definitions for single tag per card
+const CATEGORIES = [
+  "All",
+  "Finance",
+  "Personal Development", 
+  "Technology",
+  "Health",
+  "Business",
+  "Learning",
+  "Creative",
+  "Entertainment",
+  "Other"
+];
+
 const Dashboard = () => {
   const [cards, setCards] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<string>("All");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [orderBy, setOrderBy] = useState<"newest" | "oldest" | "title">("newest");
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedCard, setSelectedCard] = useState<any | null>(null);
   const navigate = useNavigate();
-  const [selectedCollection, setSelectedCollection] = useState<string | null>(null);
   const [prefillUrl, setPrefillUrl] = useState<string | undefined>(undefined);
   const [activeView, setActiveView] = useState<"cards" | "chat" | "graph">("cards");
   const [draggedCard, setDraggedCard] = useState<any | null>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const sensors = useSensors(
@@ -75,6 +86,10 @@ const Dashboard = () => {
         e.preventDefault();
         setAddDialogOpen(true);
       }
+      if ((e.ctrlKey || e.metaKey) && e.key === "/") {
+        e.preventDefault();
+        setSearchModalOpen(true);
+      }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -112,17 +127,21 @@ const Dashboard = () => {
     }
   };
 
-  const availableTags = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const card of cards) {
-      const tags: string[] = Array.isArray(card.tags) ? card.tags : [];
-      for (const tag of tags) {
-        if (!tag.startsWith('collection:'))
-          counts.set(tag, (counts.get(tag) || 0) + 1);
+  // Get primary category for a card (first non-collection tag or 'Other')
+  const getCardCategory = (card: any): string => {
+    const tags: string[] = Array.isArray(card.tags) ? card.tags : [];
+    const categoryTags = tags.filter(t => !t.startsWith('collection:') && !t.startsWith('pinned'));
+    
+    // Find matching category
+    for (const cat of CATEGORIES) {
+      if (cat === "All") continue;
+      if (categoryTags.some(t => t.toLowerCase().includes(cat.toLowerCase()))) {
+        return cat;
       }
     }
-    return Array.from(counts.entries()).sort((a, b) => b[1] - a[1]).map(([name]) => name);
-  }, [cards]);
+    
+    return categoryTags[0] || "Other";
+  };
 
   const filteredCards = useMemo(() => {
     let result = cards.filter((card) =>
@@ -130,17 +149,10 @@ const Dashboard = () => {
       card.summary?.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    if (selectedCollection) {
+    if (selectedCategory !== "All") {
       result = result.filter((card) => {
-        const tags: string[] = Array.isArray(card.tags) ? card.tags : [];
-        return tags.includes(`collection:${selectedCollection}`);
-      });
-    }
-
-    if (selectedTags.length > 0) {
-      result = result.filter((card) => {
-        const tags: string[] = Array.isArray(card.tags) ? card.tags : [];
-        return selectedTags.every((t) => tags.includes(t));
+        const category = getCardCategory(card);
+        return category.toLowerCase().includes(selectedCategory.toLowerCase());
       });
     }
 
@@ -153,7 +165,7 @@ const Dashboard = () => {
     }
 
     return result;
-  }, [cards, searchQuery, selectedTags, selectedCollection, orderBy]);
+  }, [cards, searchQuery, selectedCategory, orderBy]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -164,8 +176,6 @@ const Dashboard = () => {
   };
 
   const clearSelection = () => setSelectedIds(new Set());
-
-  const selectionEnabled = selectedIds.size > 0;
 
   const pinSelected = async () => {
     const ids = Array.from(selectedIds);
@@ -193,10 +203,20 @@ const Dashboard = () => {
 
   const handleSearch = (query: string, filters: any) => {
     setSearchQuery(query);
-    if (filters.tags?.length > 0) {
-      setSelectedTags(filters.tags);
+    if (filters.category) {
+      setSelectedCategory(filters.category);
     }
   };
+
+  // Category counts
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = { All: cards.length };
+    for (const card of cards) {
+      const cat = getCardCategory(card);
+      counts[cat] = (counts[cat] || 0) + 1;
+    }
+    return counts;
+  }, [cards]);
 
   return (
     <div className="w-full h-full flex flex-col">
@@ -206,118 +226,77 @@ const Dashboard = () => {
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        {/* Top Bar - Clean and minimal */}
-        <div className="border-b border-border px-6 py-3 flex items-center justify-between gap-4 flex-shrink-0">
-          <div className="flex-1" />
-          
+        {/* Single Top Bar - Left: controls, Center: categories, Right: actions */}
+        <div className="border-b border-border px-4 py-2.5 flex items-center gap-4 flex-shrink-0">
+          {/* Left: View toggle and Sort */}
           <div className="flex items-center gap-2">
-            {/* Search Button */}
             <Button 
-              variant="outline" 
-              size="icon"
-              className="h-9 w-9"
+              variant="ghost" 
+              size="sm"
+              className="h-8 px-2"
+              onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
+            >
+              {viewMode === "grid" ? (
+                <List className="w-4 h-4" />
+              ) : (
+                <Grid2X2 className="w-4 h-4" />
+              )}
+            </Button>
+
+            <Select value={orderBy} onValueChange={(v: any) => setOrderBy(v)}>
+              <SelectTrigger className="w-[100px] h-8 text-xs bg-transparent border-0 hover:bg-muted/50">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="newest">Newest</SelectItem>
+                <SelectItem value="oldest">Oldest</SelectItem>
+                <SelectItem value="title">Title</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          
+          {/* Center: Category tabs */}
+          <div className="flex-1 flex items-center justify-center gap-1 overflow-x-auto scrollbar-hide">
+            {CATEGORIES.filter(cat => cat === "All" || (categoryCounts[cat] || 0) > 0).map((cat) => (
+              <Button
+                key={cat}
+                variant={selectedCategory === cat ? "secondary" : "ghost"}
+                size="sm"
+                className={`h-7 px-3 text-xs whitespace-nowrap ${
+                  selectedCategory === cat 
+                    ? "bg-primary/10 text-primary" 
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setSelectedCategory(cat)}
+              >
+                {cat}
+                {cat !== "All" && categoryCounts[cat] && (
+                  <span className="ml-1.5 text-[10px] opacity-60">{categoryCounts[cat]}</span>
+                )}
+              </Button>
+            ))}
+          </div>
+          
+          {/* Right: Search and Add */}
+          <div className="flex items-center gap-2">
+            <Button 
+              variant="ghost" 
+              size="sm"
+              className="h-8 w-8 p-0"
               onClick={() => setSearchModalOpen(true)}
             >
               <Search className="w-4 h-4" />
             </Button>
             
-            {/* Add Content Button */}
-            <Button onClick={() => setAddDialogOpen(true)} className="gap-2">
-              Add Content
-              <PenLine className="w-4 h-4" />
+            <Button onClick={() => setAddDialogOpen(true)} size="sm" className="h-8 gap-1.5">
+              <Plus className="w-4 h-4" />
+              Add
             </Button>
           </div>
         </div>
 
-        {/* Controls Bar - Compact, right-aligned */}
-        <div className="px-6 py-2 flex items-center justify-end gap-3 border-b border-border flex-shrink-0">
-          {/* Active tag filters */}
-          {selectedTags.length > 0 && (
-            <div className="flex-1 flex items-center gap-2 flex-wrap mr-auto">
-              {selectedTags.map((t) => (
-                <Badge 
-                  key={t} 
-                  variant="secondary" 
-                  className="cursor-pointer hover:bg-secondary/80"
-                  onClick={() => setSelectedTags(selectedTags.filter((x) => x !== t))}
-                >
-                  {t} ×
-                </Badge>
-              ))}
-              <Button 
-                variant="ghost" 
-                size="sm" 
-                className="text-xs h-6 px-2"
-                onClick={() => setSelectedTags([])}
-              >
-                Clear
-              </Button>
-            </div>
-          )}
-          
-          {/* View Mode Toggle - Single button */}
-          <Button 
-            variant="ghost" 
-            size="sm"
-            className="gap-2 h-8"
-            onClick={() => setViewMode(viewMode === "grid" ? "list" : "grid")}
-          >
-            {viewMode === "grid" ? (
-              <>
-                <List className="w-4 h-4" />
-                List
-              </>
-            ) : (
-              <>
-                <Grid2X2 className="w-4 h-4" />
-                Grid
-              </>
-            )}
-          </Button>
-
-          {/* Order By */}
-          <Select value={orderBy} onValueChange={(v: any) => setOrderBy(v)}>
-            <SelectTrigger className="w-[120px] h-8 text-xs bg-transparent border-border">
-              <span className="text-muted-foreground mr-1">Sort:</span>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="newest">Newest</SelectItem>
-              <SelectItem value="oldest">Oldest</SelectItem>
-              <SelectItem value="title">Title</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
         {/* Main Content Area */}
         <div className="flex-1 flex overflow-hidden">
-          {/* Sidebar */}
-          <aside className={`hidden md:flex flex-col border-r border-border transition-all duration-200 ${sidebarOpen ? 'w-64' : 'w-0'}`}>
-            {sidebarOpen && (
-              <div className="flex-1 overflow-y-auto p-4">
-                <TagHierarchySidebar
-                  cards={cards}
-                  selectedTags={selectedTags}
-                  onTagSelect={setSelectedTags}
-                  selectedCollection={selectedCollection}
-                  onCollectionSelect={setSelectedCollection}
-                />
-              </div>
-            )}
-          </aside>
-          
-          {/* Sidebar Toggle */}
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="hidden md:flex items-center justify-center w-4 hover:bg-muted/50 transition-colors border-r border-border"
-          >
-            {sidebarOpen ? (
-              <ChevronLeft className="w-3 h-3 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="w-3 h-3 text-muted-foreground" />
-            )}
-          </button>
-
           {/* Cards Area */}
           <div className="flex-1 overflow-y-auto">
             {activeView === "chat" ? (
@@ -361,12 +340,12 @@ const Dashboard = () => {
                   <div className="text-center py-20">
                     <Brain className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
                     <h3 className="text-xl font-semibold mb-2">
-                      {searchQuery ? 'No results found' : 'Your knowledge base is empty'}
+                      {searchQuery || selectedCategory !== "All" ? 'No results found' : 'Your knowledge base is empty'}
                     </h3>
                     <p className="text-muted-foreground mb-6">
-                      {searchQuery ? 'Try a different search' : 'Start by adding your first piece of content'}
+                      {searchQuery || selectedCategory !== "All" ? 'Try a different search or category' : 'Start by adding your first piece of content'}
                     </p>
-                    {!searchQuery && (
+                    {!searchQuery && selectedCategory === "All" && (
                       <Button onClick={() => setAddDialogOpen(true)}>
                         <Plus className="w-4 h-4 mr-2" />
                         Add Content
@@ -402,6 +381,7 @@ const Dashboard = () => {
                                 selectionEnabled={true}
                                 selected={selectedIds.has(card.id)}
                                 onToggleSelect={toggleSelect}
+                                category={getCardCategory(card)}
                               />
                             ))}
                         </div>
@@ -429,6 +409,7 @@ const Dashboard = () => {
                                 selectionEnabled={true}
                                 selected={selectedIds.has(card.id)}
                                 onToggleSelect={toggleSelect}
+                                category={getCardCategory(card)}
                               />
                             ))}
                           </div>
@@ -472,7 +453,7 @@ const Dashboard = () => {
         open={searchModalOpen}
         onOpenChange={setSearchModalOpen}
         onSearch={handleSearch}
-        availableTags={availableTags}
+        availableTags={CATEGORIES.filter(c => c !== "All")}
       />
 
       {/* Add Content Dialog */}
