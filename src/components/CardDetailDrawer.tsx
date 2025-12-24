@@ -1,13 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ExternalLink, Zap } from "lucide-react";
+import { ExternalLink, Zap, X } from "lucide-react";
 import { toast } from "sonner";
 import ConnectionsGraph from "./ConnectionsGraph";
+import CategorySelector from "./CategorySelector";
+import { getCategoryTags, getNonCategoryTags, getCategoryIcon, isCategory } from "@/lib/categories";
+import { updateCardTags } from "@/lib/storage";
 
 interface CardDetailDrawerProps {
   open: boolean;
@@ -23,38 +26,81 @@ const CardDetailDrawer = ({ open, onOpenChange, card, allCards = [], onSelectCar
   const [chatMessages, setChatMessages] = useState<{role:"user"|"assistant";content:string}[]>([]);
   const [quiz, setQuiz] = useState<any[] | null>(null);
   const [generatingQuiz, setGeneratingQuiz] = useState(false);
+  const [cardData, setCardData] = useState<any | null>(null);
+
+  // Sync card data when card prop changes
+  useEffect(() => {
+    setCardData(card);
+  }, [card]);
+
+  const refreshCard = async () => {
+    if (!card) return;
+    const { data, error } = await supabase
+      .from('knowledge_cards')
+      .select('*')
+      .eq('id', card.id)
+      .single();
+    if (!error && data) {
+      setCardData(data);
+      // Also update the card prop if possible (for parent component)
+      if (onSelectCard) {
+        onSelectCard(data);
+      }
+    }
+  };
 
   const addTag = async () => {
     const t = newTag.trim();
-    if (!t || !card) return;
-    const current: string[] = Array.isArray(card.tags) ? card.tags : [];
+    if (!t || !cardData) return;
+    // Don't allow adding category tags through this input
+    if (isCategory(t)) {
+      return toast.info("Use the category selector to add categories");
+    }
+    const current: string[] = Array.isArray(cardData.tags) ? cardData.tags : [];
     if (current.includes(t)) return toast.info("Déjà présent");
     const next = [...current, t];
-    const { error } = await supabase.from('knowledge_cards').update({ tags: next }).eq('id', card.id);
-    if (error) return toast.error("Échec de l’ajout du tag");
-    toast.success("Connexion ajoutée");
-    setNewTag("");
+    try {
+      await updateCardTags(cardData.id, next);
+      toast.success("Connexion ajoutée");
+      setNewTag("");
+      await refreshCard();
+    } catch (error: any) {
+      toast.error(error.message || "Échec de l'ajout du tag");
+    }
+  };
+
+  const removeTag = async (tagToRemove: string) => {
+    if (!cardData) return;
+    const current: string[] = Array.isArray(cardData.tags) ? cardData.tags : [];
+    const next = current.filter(t => t !== tagToRemove);
+    try {
+      await updateCardTags(cardData.id, next);
+      toast.success("Tag supprimé");
+      await refreshCard();
+    } catch (error: any) {
+      toast.error(error.message || "Échec de la suppression du tag");
+    }
   };
 
   const sendChat = async () => {
     const q = chatInput.trim();
-    if (!q) return;
+    if (!q || !cardData) return;
     setChatMessages((m)=>[...m,{role:'user',content:q}]);
     setChatInput("");
     const { data, error } = await supabase.functions.invoke('chat-knowledge', {
-      body: { question: `Réponds à propos de cette carte précise titled "${card?.title}". Contexte: ${card?.summary || ''}. Question: ${q}` },
+      body: { question: `Réponds à propos de cette carte précise titled "${cardData?.title}". Contexte: ${cardData?.summary || ''}. Question: ${q}` },
     });
     if (error) return toast.error("Chat indisponible");
     setChatMessages((m)=>[...m,{role:'assistant',content:data.answer}]);
   };
 
   const generateQuiz = async () => {
-    if (!card) return;
+    if (!cardData) return;
     setGeneratingQuiz(true);
     setQuiz(null);
     try {
       const { data, error } = await supabase.functions.invoke('chat-knowledge', {
-        body: { question: `Génère 5 questions QCM concises (JSON) sur: ${card.title}. Contexte: ${card.summary}. Format: [{question, options:[a,b,c,d], answer}]` },
+        body: { question: `Génère 5 questions QCM concises (JSON) sur: ${cardData.title}. Contexte: ${cardData.summary}. Format: [{question, options:[a,b,c,d], answer}]` },
       });
       if (error) throw error;
       let parsed: any = null;
@@ -70,11 +116,11 @@ const CardDetailDrawer = ({ open, onOpenChange, card, allCards = [], onSelectCar
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent className="sm:max-w-[640px]">
         <SheetHeader>
-          <SheetTitle className="line-clamp-2">{card?.title}</SheetTitle>
+          <SheetTitle className="line-clamp-2">{cardData?.title}</SheetTitle>
           <SheetDescription className="space-y-2">
-            {card?.url && (
+            {cardData?.url && (
               <Button variant="link" asChild className="px-0">
-                <a href={card.url} target="_blank" rel="noreferrer">
+                <a href={cardData.url} target="_blank" rel="noreferrer">
                   Open source <ExternalLink className="w-4 h-4 ml-1" />
                 </a>
               </Button>
@@ -93,45 +139,126 @@ const CardDetailDrawer = ({ open, onOpenChange, card, allCards = [], onSelectCar
           </TabsList>
 
           <TabsContent value="reader" className="mt-4 space-y-3">
-            {card?.content_type === 'youtube' ? (
+            {cardData?.content_type === 'youtube' ? (
               <div className="aspect-video w-full rounded-md overflow-hidden border">
                 <iframe
-                  src={`https://www.youtube.com/embed/${extractYouTubeId(card.url)}`}
+                  src={`https://www.youtube.com/embed/${extractYouTubeId(cardData.url)}`}
                   className="w-full h-full"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
                 />
               </div>
-            ) : card?.metadata?.image ? (
-              <img src={card.metadata.image} alt={card?.title || ''} className="w-full rounded-md border" />
+            ) : cardData?.metadata?.image ? (
+              <img src={cardData.metadata.image} alt={cardData?.title || ''} className="w-full rounded-md border" />
             ) : null}
-            {card?.metadata?.text && (
+            {cardData?.metadata?.text && (
               <div className="prose prose-invert max-w-none text-sm leading-6 whitespace-pre-wrap">
-                {card.metadata.text}
+                {cardData.metadata.text}
               </div>
             )}
-            {!card?.metadata?.text && (
+            {!cardData?.metadata?.text && (
               <p className="text-sm text-muted-foreground">No reader content available.</p>
             )}
           </TabsContent>
 
           <TabsContent value="notebook" className="mt-4">
-            {card?.summary && (
-              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{card.summary}</p>
+            {cardData?.summary && (
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{cardData.summary}</p>
             )}
-            <div className="mt-4 flex items-center gap-2">
-              <Input value={newTag} onChange={(e)=>setNewTag(e.target.value)} placeholder="Ajouter une connexion (tag)" />
-              <Button size="icon" onClick={addTag} title="Créer une connexion">
-                <Zap className="w-4 h-4" />
-              </Button>
-            </div>
-            {Array.isArray(card?.tags) && card!.tags.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {card!.tags.map((t: string, idx: number) => (
-                  <Badge key={idx} variant="outline">{t}</Badge>
-                ))}
+            
+            {/* Categories Section */}
+            <div className="mt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium">Categories</label>
+                <CategorySelector 
+                  card={cardData} 
+                  onUpdate={refreshCard}
+                />
               </div>
-            )}
+              {(() => {
+                const tags = Array.isArray(cardData?.tags) ? cardData.tags : [];
+                const categoryTags = getCategoryTags(tags);
+                if (categoryTags.length === 0) {
+                  return (
+                    <p className="text-xs text-muted-foreground">No categories assigned</p>
+                  );
+                }
+                return (
+                  <div className="flex flex-wrap gap-2">
+                    {categoryTags.map((t: string) => {
+                      const Icon = getCategoryIcon(t);
+                      return (
+                        <Badge 
+                          key={t} 
+                          variant="secondary" 
+                          className="text-xs flex items-center gap-1.5 pr-1"
+                        >
+                          <Icon className="w-3 h-3" />
+                          {t}
+                          <button
+                            onClick={() => removeTag(t)}
+                            className="ml-1 hover:bg-destructive/20 rounded-full p-0.5 transition-colors"
+                            title="Remove category"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </Badge>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Connections Section */}
+            <div className="mt-4 space-y-2">
+              <label className="text-sm font-medium">Connections</label>
+              <div className="flex items-center gap-2">
+                <Input 
+                  value={newTag} 
+                  onChange={(e)=>setNewTag(e.target.value)} 
+                  placeholder="Ajouter une connexion (tag)"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addTag();
+                    }
+                  }}
+                />
+                <Button size="icon" onClick={addTag} title="Créer une connexion">
+                  <Zap className="w-4 h-4" />
+                </Button>
+              </div>
+              {(() => {
+                const tags = Array.isArray(cardData?.tags) ? cardData.tags : [];
+                const nonCategoryTags = getNonCategoryTags(tags);
+                if (nonCategoryTags.length === 0) {
+                  return (
+                    <p className="text-xs text-muted-foreground">No connections yet</p>
+                  );
+                }
+                return (
+                  <div className="flex flex-wrap gap-2">
+                    {nonCategoryTags.map((t: string, idx: number) => (
+                      <Badge 
+                        key={idx} 
+                        variant="outline" 
+                        className="text-xs flex items-center gap-1 pr-1"
+                      >
+                        {t}
+                        <button
+                          onClick={() => removeTag(t)}
+                          className="ml-1 hover:bg-destructive/20 rounded-full p-0.5 transition-colors"
+                          title="Remove connection"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </Badge>
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
           </TabsContent>
 
           <TabsContent value="chat" className="mt-4 space-y-3">
@@ -172,11 +299,11 @@ const CardDetailDrawer = ({ open, onOpenChange, card, allCards = [], onSelectCar
           </TabsContent>
 
           <TabsContent value="connections" className="mt-4">
-            <ConnectionsList card={card} allCards={allCards} onSelectCard={onSelectCard} />
+            <ConnectionsList card={cardData} allCards={allCards} onSelectCard={onSelectCard} />
           </TabsContent>
 
           <TabsContent value="graph" className="mt-4">
-            <ConnectionsGraph card={card} allCards={allCards} onSelectCard={onSelectCard} />
+            <ConnectionsGraph card={cardData} allCards={allCards} onSelectCard={onSelectCard} />
           </TabsContent>
         </Tabs>
       </SheetContent>

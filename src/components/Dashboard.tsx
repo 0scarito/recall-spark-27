@@ -3,7 +3,7 @@ import { loadCards as loadLocalCards, updateCardTags, deleteCards as deleteLocal
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Brain, List, Grid2X2, Network, ChevronLeft, ChevronRight, Folder, FolderPlus, Trash2, DollarSign, Lightbulb, Cpu, Heart, Briefcase, GraduationCap, Palette, Gamepad2, MoreHorizontal, LayoutGrid } from "lucide-react";
+import { Plus, Search, Brain, List, Grid2X2, Network, ChevronLeft, ChevronRight, Folder, FolderPlus, Trash2 } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import { Input } from "@/components/ui/input";
 import KnowledgeCard from "./KnowledgeCard";
@@ -20,22 +20,7 @@ import ConnectionsGraph from "./ConnectionsGraph";
 import DraggableCard from "./DraggableCard";
 import { DndContext, DragEndEvent, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-
-// Category definitions with icons
-const CATEGORY_CONFIG: { name: string; icon: React.ElementType }[] = [
-  { name: "All", icon: LayoutGrid },
-  { name: "Finance", icon: DollarSign },
-  { name: "Personal Development", icon: Lightbulb },
-  { name: "Technology", icon: Cpu },
-  { name: "Health", icon: Heart },
-  { name: "Business", icon: Briefcase },
-  { name: "Learning", icon: GraduationCap },
-  { name: "Creative", icon: Palette },
-  { name: "Entertainment", icon: Gamepad2 },
-  { name: "Other", icon: MoreHorizontal },
-];
-
-const CATEGORIES = CATEGORY_CONFIG.map(c => c.name);
+import { CATEGORY_CONFIG, CATEGORIES, getCategoryTags } from "@/lib/categories";
 
 // Droppable collection component
 const DroppableCollectionItem = ({ 
@@ -176,12 +161,25 @@ const Dashboard = () => {
     loadCards();
     const params = new URLSearchParams(window.location.search);
     const addUrl = params.get('add');
+    const categoryParam = params.get('category');
+    
     if (addUrl) {
       setPrefillUrl(addUrl);
       setAddDialogOpen(true);
       const url = new URL(window.location.href);
       url.searchParams.delete('add');
       window.history.replaceState({}, '', url.toString());
+    }
+    
+    if (categoryParam) {
+      // Validate that the category exists
+      if (CATEGORIES.includes(categoryParam)) {
+        setSelectedCategory(categoryParam);
+        // Optionally clean up the URL parameter after setting the category
+        const url = new URL(window.location.href);
+        url.searchParams.delete('category');
+        window.history.replaceState({}, '', url.toString());
+      }
     }
   }, []);
 
@@ -289,19 +287,12 @@ const Dashboard = () => {
     loadCards();
   };
 
-  // Get primary category for a card (first non-collection tag or 'Other')
+  // Get primary category for a card (first category tag or 'Other')
   const getCardCategory = (card: any): string => {
     const tags: string[] = Array.isArray(card.tags) ? card.tags : [];
-    const categoryTags = tags.filter(t => !t.startsWith('collection:') && !t.startsWith('pinned'));
+    const categoryTags = getCategoryTags(tags);
     
-    // Find matching category
-    for (const cat of CATEGORIES) {
-      if (cat === "All") continue;
-      if (categoryTags.some(t => t.toLowerCase().includes(cat.toLowerCase()))) {
-        return cat;
-      }
-    }
-    
+    // Return first category tag found, or 'Other' if none
     return categoryTags[0] || "Other";
   };
 

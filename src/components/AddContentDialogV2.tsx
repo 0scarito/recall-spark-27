@@ -10,6 +10,7 @@ import { Loader2, Link as LinkIcon, Search, FileText, Import, PenLine, Youtube, 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { CATEGORIES } from "@/lib/categories";
 
 interface AddContentDialogV2Props {
   open: boolean;
@@ -25,18 +26,6 @@ const SUPPORTED_SOURCES = [
   { icon: Globe, label: "Websites, Articles & Blogs" },
   { icon: Video, label: "Vimeo Videos" },
   { icon: Music, label: "TikTok Videos" },
-];
-
-const CATEGORIES = [
-  "Finance",
-  "Personal Development",
-  "Technology", 
-  "Health",
-  "Business",
-  "Learning",
-  "Creative",
-  "Entertainment",
-  "Other"
 ];
 
 const AddContentDialogV2 = ({ open, onOpenChange, onSuccess, initialUrl }: AddContentDialogV2Props) => {

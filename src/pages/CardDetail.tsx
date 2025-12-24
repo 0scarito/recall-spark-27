@@ -5,11 +5,13 @@ import { loadCards, KnowledgeCard } from "@/lib/storage";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Plus, ChevronLeft, ChevronRight, BookOpen, FileText } from "lucide-react";
+import { ChevronLeft, ChevronRight, BookOpen, FileText } from "lucide-react";
 import { useQuestions } from "@/hooks/useQuestions";
 import ReaderView from "@/components/card-detail/ReaderView";
 import NotebookView from "@/components/card-detail/NotebookView";
 import ChatPanel from "@/components/card-detail/ChatPanel";
+import CategorySelector from "@/components/CategorySelector";
+import { getCategoryTags, getNonCategoryTags, getCategoryIcon } from "@/lib/categories";
 
 const extractYouTubeId = (url?: string) => {
   if (!url) return "";
@@ -25,8 +27,13 @@ const CardDetail = () => {
 
   const { questions, isGenerating, generateQuestions } = useQuestions(id);
 
+  const loadCardData = async () => {
+    const data = await loadCards();
+    setCards(data);
+  };
+
   useEffect(() => {
-    loadCards().then(setCards);
+    loadCardData();
   }, []);
 
   const card = useMemo(() => cards.find((c) => c.id === id), [cards, id]);
@@ -92,14 +99,36 @@ const CardDetail = () => {
 
           {/* Tags Bar */}
           <div className="px-4 py-2.5 border-b border-border flex items-center gap-2 flex-wrap bg-background">
-            {card.tags?.map((tag) => (
-              <Badge key={tag} variant="secondary" className="rounded-full text-xs">
-                {tag}
-              </Badge>
-            ))}
-            <Button size="icon" variant="ghost" className="h-5 w-5 rounded-full">
-              <Plus className="w-3 h-3" />
-            </Button>
+            {(() => {
+              const tags = Array.isArray(card.tags) ? card.tags : [];
+              const categoryTags = getCategoryTags(tags);
+              const nonCategoryTags = getNonCategoryTags(tags);
+              
+              return (
+                <>
+                  {/* Category tags with icons */}
+                  {categoryTags.map((tag) => {
+                    const Icon = getCategoryIcon(tag);
+                    return (
+                      <Badge key={tag} variant="secondary" className="rounded-full text-xs flex items-center gap-1.5">
+                        <Icon className="w-3 h-3" />
+                        {tag}
+                      </Badge>
+                    );
+                  })}
+                  {/* Regular connection tags */}
+                  {nonCategoryTags.map((tag) => (
+                    <Badge key={tag} variant="outline" className="rounded-full text-xs">
+                      {tag}
+                    </Badge>
+                  ))}
+                </>
+              );
+            })()}
+            <CategorySelector 
+              card={card} 
+              onUpdate={loadCardData}
+            />
           </div>
 
           {/* Content Tabs */}

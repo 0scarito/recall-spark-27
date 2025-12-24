@@ -3,15 +3,23 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import { Moon, Sun, Monitor, Eye, FileText, ExternalLink, Download, Zap, Trash, Mail } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Badge } from "@/components/ui/badge";
+import { Moon, Sun, Monitor, Eye, FileText, ExternalLink, Download, Zap, Trash, Mail, ArrowRight } from "lucide-react";
+import { useEffect, useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { loadCards } from "@/lib/storage";
+import { CATEGORY_CONFIG, CATEGORIES, getCategoryTags, getCategoryIcon } from "@/lib/categories";
+import { useNavigate } from "react-router-dom";
 const Settings = () => {
+  const navigate = useNavigate();
   const [mode, setMode] = useState("dark");
   const [defaultAction, setDefaultAction] = useState("concise");
   const [receiveEmail, setReceiveEmail] = useState(true);
   const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [cards, setCards] = useState<any[]>([]);
+  const [loadingCards, setLoadingCards] = useState(true);
+
   useEffect(() => {
     supabase.auth.getUser().then(({
       data
@@ -19,6 +27,42 @@ const Settings = () => {
       setUserEmail(data.user?.email ?? null);
     });
   }, []);
+
+  useEffect(() => {
+    const loadCardData = async () => {
+      try {
+        const data = await loadCards();
+        setCards(data || []);
+      } catch (error) {
+        console.error("Error loading cards:", error);
+      } finally {
+        setLoadingCards(false);
+      }
+    };
+    loadCardData();
+  }, []);
+
+  // Get primary category for a card
+  const getCardCategory = (card: any): string => {
+    const tags: string[] = Array.isArray(card.tags) ? card.tags : [];
+    const categoryTags = getCategoryTags(tags);
+    return categoryTags[0] || "Other";
+  };
+
+  // Calculate category counts
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    cards.forEach((card) => {
+      const category = getCardCategory(card);
+      counts[category] = (counts[category] || 0) + 1;
+    });
+    return counts;
+  }, [cards]);
+
+  const handleViewCategory = (category: string) => {
+    // Navigate to home with category filter
+    navigate(`/home?category=${encodeURIComponent(category)}`);
+  };
   return <AppLayout>
       <div className="max-w-3xl p-8">
         <h1 className="text-4xl font-bold mb-8">My Settings</h1>
@@ -192,6 +236,56 @@ const Settings = () => {
           }}>
               <Download className="w-4 h-4" /> Export
             </Button>
+          </div>
+
+          {/* Category Management */}
+          <div className="space-y-4">
+            <div>
+              <div className="font-medium text-lg mb-1">Category Management</div>
+              <p className="text-sm text-muted-foreground">
+                View and manage your content categories. Click on a category to view all cards in that category.
+              </p>
+            </div>
+            {loadingCards ? (
+              <p className="text-sm text-muted-foreground">Loading categories...</p>
+            ) : (
+              <div className="space-y-2">
+                {CATEGORY_CONFIG.filter(cat => cat.name !== "All").map((categoryConfig) => {
+                  const count = categoryCounts[categoryConfig.name] || 0;
+                  const Icon = categoryConfig.icon;
+                  return (
+                    <div
+                      key={categoryConfig.name}
+                      className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors cursor-pointer"
+                      onClick={() => handleViewCategory(categoryConfig.name)}
+                    >
+                      <div className="flex items-center gap-3">
+                        <Icon className="w-5 h-5 text-muted-foreground" />
+                        <div>
+                          <div className="font-medium text-sm">{categoryConfig.name}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {count} {count === 1 ? 'card' : 'cards'}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {count > 0 && (
+                          <Badge variant="secondary" className="text-xs">
+                            {count}
+                          </Badge>
+                        )}
+                        <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                      </div>
+                    </div>
+                  );
+                })}
+                {cards.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    No cards found. Start by adding content to see categories.
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Subscription */}
