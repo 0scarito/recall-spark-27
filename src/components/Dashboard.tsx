@@ -3,7 +3,9 @@ import { loadCards as loadLocalCards, updateCardTags, deleteCards as deleteLocal
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Brain, List, Grid2X2, Network, ChevronLeft, ChevronRight, Hash, Folder } from "lucide-react";
+import { Plus, Search, Brain, List, Grid2X2, Network, ChevronLeft, ChevronRight, Folder, FolderPlus, Trash2, DollarSign, Lightbulb, Cpu, Heart, Briefcase, GraduationCap, Palette, Gamepad2, MoreHorizontal, LayoutGrid } from "lucide-react";
+import { useDroppable } from "@dnd-kit/core";
+import { Input } from "@/components/ui/input";
 import KnowledgeCard from "./KnowledgeCard";
 import AddContentDialogV2 from "./AddContentDialogV2";
 import SearchModal from "./SearchModal";
@@ -19,19 +21,121 @@ import DraggableCard from "./DraggableCard";
 import { DndContext, DragEndEvent, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 
-// Category definitions for single tag per card
-const CATEGORIES = [
-  "All",
-  "Finance",
-  "Personal Development", 
-  "Technology",
-  "Health",
-  "Business",
-  "Learning",
-  "Creative",
-  "Entertainment",
-  "Other"
+// Category definitions with icons
+const CATEGORY_CONFIG: { name: string; icon: React.ElementType }[] = [
+  { name: "All", icon: LayoutGrid },
+  { name: "Finance", icon: DollarSign },
+  { name: "Personal Development", icon: Lightbulb },
+  { name: "Technology", icon: Cpu },
+  { name: "Health", icon: Heart },
+  { name: "Business", icon: Briefcase },
+  { name: "Learning", icon: GraduationCap },
+  { name: "Creative", icon: Palette },
+  { name: "Entertainment", icon: Gamepad2 },
+  { name: "Other", icon: MoreHorizontal },
 ];
+
+const CATEGORIES = CATEGORY_CONFIG.map(c => c.name);
+
+// Droppable collection component
+const DroppableCollectionItem = ({ 
+  name, 
+  isActive, 
+  onSelect, 
+  onDelete,
+  isOver: externalIsOver 
+}: { 
+  name: string; 
+  isActive: boolean; 
+  onSelect: () => void;
+  onDelete: () => void;
+  isOver?: boolean;
+}) => {
+  const { setNodeRef, isOver } = useDroppable({
+    id: `collection:${name}`,
+  });
+  
+  const highlighted = isOver || externalIsOver;
+  
+  return (
+    <div 
+      ref={setNodeRef}
+      className={`group w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200 cursor-pointer ${
+        highlighted
+          ? "bg-primary/20 text-primary ring-2 ring-primary/30 scale-[1.02]"
+          : isActive
+            ? "bg-primary/10 text-primary font-medium"
+            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+      }`}
+      onClick={onSelect}
+    >
+      <span className="flex items-center gap-2.5 truncate">
+        <Folder className={`w-4 h-4 flex-shrink-0 transition-colors ${highlighted ? 'text-primary' : ''}`} />
+        <span className="truncate">{name}</span>
+      </span>
+      <button
+        onClick={(e) => { e.stopPropagation(); onDelete(); }}
+        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-destructive/20 rounded transition-all duration-150"
+        title="Delete collection"
+      >
+        <Trash2 className="w-3 h-3 text-destructive" />
+      </button>
+    </div>
+  );
+};
+
+// New collection drop zone
+const NewCollectionDropZone = ({ onCreateCollection }: { onCreateCollection: (name: string) => void }) => {
+  const [isCreating, setIsCreating] = useState(false);
+  const [newName, setNewName] = useState("");
+  const { setNodeRef, isOver } = useDroppable({
+    id: "collection:__new__",
+  });
+
+  const handleCreate = () => {
+    if (newName.trim()) {
+      onCreateCollection(newName.trim());
+      setNewName("");
+      setIsCreating(false);
+    }
+  };
+
+  if (isCreating) {
+    return (
+      <div className="flex gap-2">
+        <Input
+          value={newName}
+          onChange={(e) => setNewName(e.target.value)}
+          placeholder="Collection name..."
+          className="h-8 text-sm"
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleCreate();
+            if (e.key === "Escape") { setIsCreating(false); setNewName(""); }
+          }}
+        />
+        <Button size="sm" variant="ghost" onClick={handleCreate} className="h-8 px-2">
+          <Plus className="w-4 h-4" />
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      ref={setNodeRef}
+      onClick={() => setIsCreating(true)}
+      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm border-2 border-dashed transition-all duration-200 cursor-pointer ${
+        isOver
+          ? "border-primary bg-primary/10 text-primary scale-[1.02]"
+          : "border-muted-foreground/20 text-muted-foreground/60 hover:border-muted-foreground/40 hover:text-muted-foreground"
+      }`}
+    >
+      <FolderPlus className="w-4 h-4 flex-shrink-0" />
+      <span>{isOver ? "Drop to create collection" : "New collection"}</span>
+    </div>
+  );
+};
 
 const Dashboard = () => {
   const [cards, setCards] = useState<any[]>([]);
@@ -116,6 +220,25 @@ const Dashboard = () => {
     const card = cards.find((c) => c.id === cardId);
     if (!card) return;
 
+    // Handle new collection creation
+    if (targetCollection === "collection:__new__") {
+      const newCollectionName = prompt("Enter collection name:");
+      if (!newCollectionName?.trim()) return;
+      
+      const currentTags: string[] = Array.isArray(card.tags) ? card.tags : [];
+      const withoutCollections = currentTags.filter((t) => !t.startsWith("collection:"));
+      const newTags = [...withoutCollections, `collection:${newCollectionName.trim()}`];
+      
+      try {
+        await updateCardTags(cardId, newTags);
+        toast.success(`Created "${newCollectionName.trim()}" and added card`);
+        loadCards();
+      } catch {
+        toast.error("Failed to create collection");
+      }
+      return;
+    }
+
     const currentTags: string[] = Array.isArray(card.tags) ? card.tags : [];
     const withoutCollections = currentTags.filter((t) => !t.startsWith("collection:"));
     const newTags = [...withoutCollections, targetCollection];
@@ -127,6 +250,43 @@ const Dashboard = () => {
     } catch {
       toast.error("Failed to move card");
     }
+  };
+
+  // Delete a collection (remove from all cards)
+  const handleDeleteCollection = async (collectionName: string) => {
+    const tagToRemove = `collection:${collectionName}`;
+    const affectedCards = cards.filter(c => c.tags?.includes(tagToRemove));
+    
+    if (affectedCards.length > 0) {
+      const confirm = window.confirm(`Remove "${collectionName}" from ${affectedCards.length} card(s)?`);
+      if (!confirm) return;
+    }
+    
+    try {
+      for (const card of affectedCards) {
+        const newTags = (card.tags || []).filter((t: string) => t !== tagToRemove);
+        await updateCardTags(card.id, newTags);
+      }
+      toast.success(`Deleted collection "${collectionName}"`);
+      loadCards();
+    } catch {
+      toast.error("Failed to delete collection");
+    }
+  };
+
+  // Create a new collection and optionally add a card
+  const handleCreateCollection = async (name: string, cardId?: string) => {
+    if (cardId) {
+      const card = cards.find(c => c.id === cardId);
+      if (card) {
+        const currentTags: string[] = Array.isArray(card.tags) ? card.tags : [];
+        const withoutCollections = currentTags.filter((t) => !t.startsWith("collection:"));
+        const newTags = [...withoutCollections, `collection:${name}`];
+        await updateCardTags(cardId, newTags);
+      }
+    }
+    toast.success(`Collection "${name}" created`);
+    loadCards();
   };
 
   // Get primary category for a card (first non-collection tag or 'Other')
@@ -310,36 +470,50 @@ const Dashboard = () => {
                 <div className="space-y-6">
                   {/* Categories */}
                   <div>
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
+                    <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">
                       Categories
                     </h3>
-                    <div className="space-y-0.5">
-                      {CATEGORIES.filter(cat => cat === "All" || (categoryCounts[cat] || 0) > 0).map((cat) => (
-                        <button
-                          key={cat}
-                          onClick={() => setSelectedCategory(cat)}
-                          className={`w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded text-sm transition-colors ${
-                            selectedCategory === cat
-                              ? "bg-primary/10 text-primary font-medium"
-                              : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-                          }`}
-                        >
-                          <span className="flex items-center gap-2 truncate">
-                            <Hash className="w-3.5 h-3.5 flex-shrink-0" />
-                            <span className="truncate">{cat}</span>
-                          </span>
-                          <span className="text-xs opacity-60">{categoryCounts[cat] || 0}</span>
-                        </button>
-                      ))}
+                    <div className="space-y-1">
+                      {CATEGORY_CONFIG.filter(cat => cat.name === "All" || (categoryCounts[cat.name] || 0) > 0).map((cat) => {
+                        const Icon = cat.icon;
+                        return (
+                          <button
+                            key={cat.name}
+                            onClick={() => setSelectedCategory(cat.name)}
+                            className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200 group ${
+                              selectedCategory === cat.name
+                                ? "bg-primary/10 text-primary font-medium shadow-sm"
+                                : "text-muted-foreground hover:text-foreground hover:bg-muted/50 hover:translate-x-0.5"
+                            }`}
+                          >
+                            <span className="flex items-center gap-2.5 truncate">
+                              <Icon className={`w-4 h-4 flex-shrink-0 transition-transform duration-200 ${
+                                selectedCategory === cat.name ? 'scale-110' : 'group-hover:scale-110'
+                              }`} />
+                              <span className="truncate">{cat.name}</span>
+                            </span>
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full transition-colors ${
+                              selectedCategory === cat.name 
+                                ? 'bg-primary/20 text-primary' 
+                                : 'bg-muted text-muted-foreground'
+                            }`}>
+                              {categoryCounts[cat.name] || 0}
+                            </span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
 
+                  {/* Divider */}
+                  <div className="h-px bg-border/50" />
+
                   {/* Collections */}
                   <div>
-                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 px-1">
+                    <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">
                       Collections
                     </h3>
-                    <div className="space-y-0.5">
+                    <div className="space-y-1">
                       {(() => {
                         const collections = new Set<string>();
                         for (const card of cards) {
@@ -351,18 +525,18 @@ const Dashboard = () => {
                           }
                         }
                         return Array.from(collections).sort().map((c) => (
-                          <button
+                          <DroppableCollectionItem
                             key={c}
-                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-sm text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors"
-                          >
-                            <Folder className="w-3.5 h-3.5" />
-                            <span className="truncate">{c}</span>
-                          </button>
+                            name={c}
+                            isActive={false}
+                            onSelect={() => {}}
+                            onDelete={() => handleDeleteCollection(c)}
+                          />
                         ));
                       })()}
-                      {cards.every(c => !c.tags?.some((t: string) => t.startsWith('collection:'))) && (
-                        <p className="text-xs text-muted-foreground/60 px-2 py-1">No collections yet</p>
-                      )}
+                      
+                      {/* New collection drop zone */}
+                      <NewCollectionDropZone onCreateCollection={(name) => handleCreateCollection(name)} />
                     </div>
                   </div>
                 </div>
