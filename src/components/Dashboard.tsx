@@ -1,16 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
 import { loadCards as loadLocalCards, updateCardTags, deleteCards as deleteLocalCards } from "@/lib/storage";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Brain, List, Grid2X2, Network, ChevronLeft, ChevronRight, Folder, FolderPlus, Trash2 } from "lucide-react";
-import { useDroppable } from "@dnd-kit/core";
-import { Input } from "@/components/ui/input";
+import { Plus, Search, Brain, List, Grid2X2, Network, ChevronLeft, ChevronRight } from "lucide-react";
 import KnowledgeCard from "./KnowledgeCard";
 import AddContentDialogV2 from "./AddContentDialogV2";
 import SearchModal from "./SearchModal";
 import SelectionBanner from "./SelectionBanner";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import TagHierarchySidebar from "./TagHierarchySidebar";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import CardDetailDrawer from "./CardDetailDrawer";
@@ -20,107 +17,7 @@ import ConnectionsGraph from "./ConnectionsGraph";
 import DraggableCard from "./DraggableCard";
 import { DndContext, DragEndEvent, DragOverlay, closestCenter, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { CATEGORY_CONFIG, CATEGORIES, getCategoryTags } from "@/lib/categories";
-
-// Droppable collection component
-const DroppableCollectionItem = ({ 
-  name, 
-  isActive, 
-  onSelect, 
-  onDelete,
-  isOver: externalIsOver 
-}: { 
-  name: string; 
-  isActive: boolean; 
-  onSelect: () => void;
-  onDelete: () => void;
-  isOver?: boolean;
-}) => {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `collection:${name}`,
-  });
-  
-  const highlighted = isOver || externalIsOver;
-  
-  return (
-    <div 
-      ref={setNodeRef}
-      className={`group w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200 cursor-pointer ${
-        highlighted
-          ? "bg-primary/20 text-primary ring-2 ring-primary/30 scale-[1.02]"
-          : isActive
-            ? "bg-primary/10 text-primary font-medium"
-            : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
-      }`}
-      onClick={onSelect}
-    >
-      <span className="flex items-center gap-2.5 truncate">
-        <Folder className={`w-4 h-4 flex-shrink-0 transition-colors ${highlighted ? 'text-primary' : ''}`} />
-        <span className="truncate">{name}</span>
-      </span>
-      <button
-        onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        className="opacity-0 group-hover:opacity-100 p-1 hover:bg-destructive/20 rounded transition-all duration-150"
-        title="Delete collection"
-      >
-        <Trash2 className="w-3 h-3 text-destructive" />
-      </button>
-    </div>
-  );
-};
-
-// New collection drop zone
-const NewCollectionDropZone = ({ onCreateCollection }: { onCreateCollection: (name: string) => void }) => {
-  const [isCreating, setIsCreating] = useState(false);
-  const [newName, setNewName] = useState("");
-  const { setNodeRef, isOver } = useDroppable({
-    id: "collection:__new__",
-  });
-
-  const handleCreate = () => {
-    if (newName.trim()) {
-      onCreateCollection(newName.trim());
-      setNewName("");
-      setIsCreating(false);
-    }
-  };
-
-  if (isCreating) {
-    return (
-      <div className="flex gap-2">
-        <Input
-          value={newName}
-          onChange={(e) => setNewName(e.target.value)}
-          placeholder="Collection name..."
-          className="h-8 text-sm"
-          autoFocus
-          onKeyDown={(e) => {
-            if (e.key === "Enter") handleCreate();
-            if (e.key === "Escape") { setIsCreating(false); setNewName(""); }
-          }}
-        />
-        <Button size="sm" variant="ghost" onClick={handleCreate} className="h-8 px-2">
-          <Plus className="w-4 h-4" />
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      ref={setNodeRef}
-      onClick={() => setIsCreating(true)}
-      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm border-2 border-dashed transition-all duration-200 cursor-pointer ${
-        isOver
-          ? "border-primary bg-primary/10 text-primary scale-[1.02]"
-          : "border-muted-foreground/20 text-muted-foreground/60 hover:border-muted-foreground/40 hover:text-muted-foreground"
-      }`}
-    >
-      <FolderPlus className="w-4 h-4 flex-shrink-0" />
-      <span>{isOver ? "Drop to create collection" : "New collection"}</span>
-    </div>
-  );
-};
+import { CATEGORIES, getCategoryTags } from "@/lib/categories";
 
 const Dashboard = () => {
   const [cards, setCards] = useState<any[]>([]);
@@ -128,7 +25,7 @@ const Dashboard = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string>("All");
+  const [selectedFilter, setSelectedFilter] = useState<string | null>(null); // null = All, "collection:X", "category:X"
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [orderBy, setOrderBy] = useState<"newest" | "oldest" | "title">("newest");
   const [detailOpen, setDetailOpen] = useState(false);
@@ -174,7 +71,7 @@ const Dashboard = () => {
     if (categoryParam) {
       // Validate that the category exists
       if (CATEGORIES.includes(categoryParam)) {
-        setSelectedCategory(categoryParam);
+        setSelectedFilter(`category:${categoryParam}`);
         // Optionally clean up the URL parameter after setting the category
         const url = new URL(window.location.href);
         url.searchParams.delete('category');
@@ -287,6 +184,30 @@ const Dashboard = () => {
     loadCards();
   };
 
+  // Delete a category (remove from all cards)
+  const handleDeleteCategory = async (category: string) => {
+    const affectedCards = cards.filter(c => c.tags?.includes(category));
+    
+    if (affectedCards.length > 0) {
+      const confirm = window.confirm(`Remove "${category}" from ${affectedCards.length} card(s)?`);
+      if (!confirm) return;
+    }
+    
+    try {
+      for (const card of affectedCards) {
+        const newTags = (card.tags || []).filter((t: string) => t !== category);
+        await updateCardTags(card.id, newTags);
+      }
+      toast.success(`Deleted category "${category}"`);
+      if (selectedFilter === `category:${category}`) {
+        setSelectedFilter(null);
+      }
+      loadCards();
+    } catch {
+      toast.error("Failed to delete category");
+    }
+  };
+
   // Get primary category for a card (first category tag or 'Other')
   const getCardCategory = (card: any): string => {
     const tags: string[] = Array.isArray(card.tags) ? card.tags : [];
@@ -302,11 +223,20 @@ const Dashboard = () => {
       card.summary?.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
-    if (selectedCategory !== "All") {
-      result = result.filter((card) => {
-        const category = getCardCategory(card);
-        return category.toLowerCase().includes(selectedCategory.toLowerCase());
-      });
+    // Apply filter based on selectedFilter
+    if (selectedFilter) {
+      if (selectedFilter.startsWith("category:")) {
+        const category = selectedFilter.replace("category:", "");
+        result = result.filter((card) => {
+          const cardCategory = getCardCategory(card);
+          return cardCategory.toLowerCase().includes(category.toLowerCase());
+        });
+      } else if (selectedFilter.startsWith("collection:")) {
+        result = result.filter((card) => {
+          const tags: string[] = Array.isArray(card.tags) ? card.tags : [];
+          return tags.includes(selectedFilter);
+        });
+      }
     }
 
     if (orderBy === "newest") {
@@ -318,7 +248,7 @@ const Dashboard = () => {
     }
 
     return result;
-  }, [cards, searchQuery, selectedCategory, orderBy]);
+  }, [cards, searchQuery, selectedFilter, orderBy]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -357,7 +287,7 @@ const Dashboard = () => {
   const handleSearch = (query: string, filters: any) => {
     setSearchQuery(query);
     if (filters.category) {
-      setSelectedCategory(filters.category);
+      setSelectedFilter(`category:${filters.category}`);
     }
   };
 
@@ -408,26 +338,26 @@ const Dashboard = () => {
             </Select>
           </div>
           
-          {/* Center: Category tabs */}
-          <div className="flex-1 flex items-center justify-center gap-1 overflow-x-auto scrollbar-hide">
-            {CATEGORIES.filter(cat => cat === "All" || (categoryCounts[cat] || 0) > 0).map((cat) => (
-              <Button
-                key={cat}
-                variant={selectedCategory === cat ? "secondary" : "ghost"}
-                size="sm"
-                className={`h-7 px-3 text-xs whitespace-nowrap ${
-                  selectedCategory === cat 
-                    ? "bg-primary/10 text-primary" 
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={() => setSelectedCategory(cat)}
-              >
-                {cat}
-                {cat !== "All" && categoryCounts[cat] && (
-                  <span className="ml-1.5 text-[10px] opacity-60">{categoryCounts[cat]}</span>
-                )}
-              </Button>
-            ))}
+          {/* Center: Filter display */}
+          <div className="flex-1 flex items-center justify-center">
+            {selectedFilter && (
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Filtering:</span>
+                <span className="text-sm font-medium text-primary">
+                  {selectedFilter.startsWith("category:") 
+                    ? selectedFilter.replace("category:", "") 
+                    : selectedFilter.replace("collection:", "")}
+                </span>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-6 px-2 text-xs"
+                  onClick={() => setSelectedFilter(null)}
+                >
+                  Clear
+                </Button>
+              </div>
+            )}
           </div>
           
           {/* Right: Search and Add */}
@@ -457,81 +387,14 @@ const Dashboard = () => {
             }`}
           >
             {sidebarOpen && (
-              <ScrollArea className="flex-1 p-4">
-                <div className="space-y-6">
-                  {/* Categories */}
-                  <div>
-                    <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">
-                      Categories
-                    </h3>
-                    <div className="space-y-1">
-                      {CATEGORY_CONFIG.filter(cat => cat.name === "All" || (categoryCounts[cat.name] || 0) > 0).map((cat) => {
-                        const Icon = cat.icon;
-                        return (
-                          <button
-                            key={cat.name}
-                            onClick={() => setSelectedCategory(cat.name)}
-                            className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-sm transition-all duration-200 group ${
-                              selectedCategory === cat.name
-                                ? "bg-primary/10 text-primary font-medium shadow-sm"
-                                : "text-muted-foreground hover:text-foreground hover:bg-muted/50 hover:translate-x-0.5"
-                            }`}
-                          >
-                            <span className="flex items-center gap-2.5 truncate">
-                              <Icon className={`w-4 h-4 flex-shrink-0 transition-transform duration-200 ${
-                                selectedCategory === cat.name ? 'scale-110' : 'group-hover:scale-110'
-                              }`} />
-                              <span className="truncate">{cat.name}</span>
-                            </span>
-                            <span className={`text-xs px-1.5 py-0.5 rounded-full transition-colors ${
-                              selectedCategory === cat.name 
-                                ? 'bg-primary/20 text-primary' 
-                                : 'bg-muted text-muted-foreground'
-                            }`}>
-                              {categoryCounts[cat.name] || 0}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* Divider */}
-                  <div className="h-px bg-border/50" />
-
-                  {/* Collections */}
-                  <div>
-                    <h3 className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-3 px-1">
-                      Collections
-                    </h3>
-                    <div className="space-y-1">
-                      {(() => {
-                        const collections = new Set<string>();
-                        for (const card of cards) {
-                          const tags: string[] = Array.isArray(card.tags) ? card.tags : [];
-                          for (const tag of tags) {
-                            if (tag.startsWith('collection:')) {
-                              collections.add(tag.replace('collection:', ''));
-                            }
-                          }
-                        }
-                        return Array.from(collections).sort().map((c) => (
-                          <DroppableCollectionItem
-                            key={c}
-                            name={c}
-                            isActive={false}
-                            onSelect={() => {}}
-                            onDelete={() => handleDeleteCollection(c)}
-                          />
-                        ));
-                      })()}
-                      
-                      {/* New collection drop zone */}
-                      <NewCollectionDropZone onCreateCollection={(name) => handleCreateCollection(name)} />
-                    </div>
-                  </div>
-                </div>
-              </ScrollArea>
+              <TagHierarchySidebar
+                cards={cards}
+                selectedFilter={selectedFilter}
+                onSelectFilter={setSelectedFilter}
+                onCreateCollection={(name) => handleCreateCollection(name)}
+                onDeleteCollection={handleDeleteCollection}
+                onDeleteCategory={handleDeleteCategory}
+              />
             )}
           </aside>
           
@@ -590,12 +453,12 @@ const Dashboard = () => {
                   <div className="text-center py-20">
                     <Brain className="w-16 h-16 mx-auto mb-4 text-muted-foreground" />
                     <h3 className="text-xl font-semibold mb-2">
-                      {searchQuery || selectedCategory !== "All" ? 'No results found' : 'Your knowledge base is empty'}
+                      {searchQuery || selectedFilter ? 'No results found' : 'Your knowledge base is empty'}
                     </h3>
                     <p className="text-muted-foreground mb-6">
-                      {searchQuery || selectedCategory !== "All" ? 'Try a different search or category' : 'Start by adding your first piece of content'}
+                      {searchQuery || selectedFilter ? 'Try a different search or filter' : 'Start by adding your first piece of content'}
                     </p>
-                    {!searchQuery && selectedCategory === "All" && (
+                    {!searchQuery && !selectedFilter && (
                       <Button onClick={() => setAddDialogOpen(true)}>
                         <Plus className="w-4 h-4 mr-2" />
                         Add Content
