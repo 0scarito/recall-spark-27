@@ -19,6 +19,34 @@ function extractYouTubeId(url: string): string | null {
   return null;
 }
 
+// Validate transcript content - check if it's actual content, not an error message
+function isValidTranscript(text: string): boolean {
+  if (!text || text.length < 100) return false;
+  
+  // Check for common error patterns
+  const errorPatterns = [
+    /sorry.*blocking/i,
+    /youtube.*blocking/i,
+    /unable.*fetch/i,
+    /error.*transcript/i,
+    /transcript.*unavailable/i,
+    /subtitles.*disabled/i,
+    /captions.*disabled/i,
+    /we're sorry/i,
+    /preventing us from/i,
+    /working on a fix/i,
+  ];
+  
+  for (const pattern of errorPatterns) {
+    if (pattern.test(text)) {
+      console.log('Transcript contains error message pattern:', pattern);
+      return false;
+    }
+  }
+  
+  return true;
+}
+
 // Method 1: Direct YouTube timedtext API
 async function fetchYouTubeTimedText(videoId: string): Promise<{ text: string; withTimestamps: string } | null> {
   try {
@@ -99,6 +127,12 @@ async function fetchYouTubeTimedText(videoId: string): Promise<{ text: string; w
       })
       .join('\n');
 
+    // Validate the transcript content
+    if (!isValidTranscript(text)) {
+      console.log('YouTube timedtext returned invalid/error content');
+      return null;
+    }
+
     console.log('YouTube timedtext API success, got', segments.length, 'segments');
     return { text, withTimestamps };
   } catch (e) {
@@ -123,6 +157,13 @@ async function fetchYouTubeTranscriptCom(videoId: string): Promise<{ text: strin
     }
 
     const html = await response.text();
+    
+    // Check if the response contains an error message instead of transcript
+    if (html.includes("We're sorry") || html.includes("blocking") || html.includes("error")) {
+      console.log('youtubetranscript.com returned error page');
+      return null;
+    }
+    
     const matches = html.match(/<text start="([^"]+)"[^>]*>([^<]+)<\/text>/g);
     
     if (!matches || matches.length === 0) {
@@ -158,8 +199,9 @@ async function fetchYouTubeTranscriptCom(videoId: string): Promise<{ text: strin
       })
       .join('\n');
 
-    if (text.length < 100) {
-      console.log('Transcript too short');
+    // Validate the transcript content
+    if (!isValidTranscript(text)) {
+      console.log('youtubetranscript.com returned invalid/error content');
       return null;
     }
 
@@ -236,6 +278,12 @@ async function fetchTranscriptProxy(videoId: string): Promise<{ text: string; wi
       })
       .join('\n');
 
+    // Validate the transcript content
+    if (!isValidTranscript(text)) {
+      console.log('Transcript proxy returned invalid/error content');
+      return null;
+    }
+
     console.log('Transcript proxy success');
     return { text, withTimestamps };
   } catch (e) {
@@ -248,18 +296,71 @@ async function fetchTranscriptProxy(videoId: string): Promise<{ text: string; wi
 async function fetchYouTubeTranscript(videoId: string): Promise<{ text: string; withTimestamps: string; source: string } | null> {
   // Try Method 1: Direct YouTube timedtext
   let result = await fetchYouTubeTimedText(videoId);
-  if (result) return { ...result, source: 'youtube-api' };
+  if (result && isValidTranscript(result.text)) return { ...result, source: 'youtube-api' };
 
   // Try Method 2: youtubetranscript.com
   result = await fetchYouTubeTranscriptCom(videoId);
-  if (result) return { ...result, source: 'youtubetranscript.com' };
+  if (result && isValidTranscript(result.text)) return { ...result, source: 'youtubetranscript.com' };
 
   // Try Method 3: Proxy API
   result = await fetchTranscriptProxy(videoId);
-  if (result) return { ...result, source: 'proxy-api' };
+  if (result && isValidTranscript(result.text)) return { ...result, source: 'proxy-api' };
 
   console.log('All transcript methods failed');
   return null;
+}
+
+// Firecrawl-based content fetch for blocked websites
+async function fetchWithFirecrawl(url: string): Promise<{ text: string; title: string; metadata: any } | null> {
+  try {
+    const apiKey = Deno.env.get('FIRECRAWL_API_KEY');
+    if (!apiKey) {
+      console.log('Firecrawl API key not configured');
+      return null;
+    }
+
+    console.log('Trying Firecrawl for content fetch...');
+    const response = await fetch('https://api.firecrawl.dev/v1/scrape', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        url,
+        formats: ['markdown'],
+        onlyMainContent: true,
+      }),
+    });
+
+    if (!response.ok) {
+      console.log('Firecrawl returned', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    if (!data.success) {
+      console.log('Firecrawl failed:', data.error);
+      return null;
+    }
+
+    const markdown = data.data?.markdown || '';
+    const metadata = data.data?.metadata || {};
+    
+    console.log('Firecrawl success, content length:', markdown.length);
+    return {
+      text: markdown,
+      title: metadata.title || '',
+      metadata: {
+        ogImage: metadata.ogImage || '',
+        siteName: metadata.ogSiteName || '',
+        description: metadata.description || '',
+      },
+    };
+  } catch (e) {
+    console.log('Firecrawl error:', e);
+    return null;
+  }
 }
 
 // Perplexity-powered video information search
@@ -381,18 +482,20 @@ serve(async (req) => {
       // Try to fetch transcript with multiple fallbacks
       transcriptData = await fetchYouTubeTranscript(youtubeId);
       
-      if (transcriptData) {
+      if (transcriptData && isValidTranscript(transcriptData.text)) {
         textContent = transcriptData.withTimestamps;
         transcriptSource = transcriptData.source;
-        console.log('Got transcript from:', transcriptSource, 'Length:', transcriptData.text.length);
+        console.log('Got valid transcript from:', transcriptSource, 'Length:', transcriptData.text.length);
       } else {
         // All transcript methods failed - will use Perplexity search
-        textContent = `YouTube video: ${title}. Channel: ${siteName}`;
+        textContent = '';  // Don't store error messages as content
         transcriptSource = 'none';
-        console.log('No transcript available - will use web search for summary');
+        console.log('No valid transcript available - will use web search for summary');
       }
     } else {
       // Standard webpage fetch
+      let fetchSuccess = false;
+      
       try {
         const contentResponse = await fetch(url, {
           headers: {
@@ -402,15 +505,7 @@ serve(async (req) => {
           }
         });
         
-        if (!contentResponse.ok) {
-          console.warn(`Failed to fetch URL: ${contentResponse.status}`);
-          if (contentResponse.status === 429 || contentResponse.status === 403) {
-            title = new URL(url).hostname.replace('www.', '');
-            textContent = `Content from: ${url}. Unable to fetch due to access restrictions.`;
-          } else {
-            throw new Error(`Unable to access the URL (${contentResponse.status})`);
-          }
-        } else {
+        if (contentResponse.ok) {
           const html = await contentResponse.text();
           
           // Extract metadata
@@ -439,9 +534,33 @@ serve(async (req) => {
             .replace(/\s+/g, ' ')
             .trim()
             .slice(0, 10000);
+          
+          fetchSuccess = true;
+        } else if (contentResponse.status === 429 || contentResponse.status === 403) {
+          console.log(`Direct fetch blocked (${contentResponse.status}), trying Firecrawl...`);
+        } else {
+          console.warn(`Failed to fetch URL: ${contentResponse.status}`);
         }
       } catch (fetchError) {
-        console.warn('Fetch failed:', fetchError);
+        console.warn('Direct fetch failed:', fetchError);
+      }
+      
+      // Try Firecrawl as fallback for blocked content
+      if (!fetchSuccess) {
+        const firecrawlResult = await fetchWithFirecrawl(url);
+        if (firecrawlResult) {
+          textContent = firecrawlResult.text;
+          title = firecrawlResult.title || new URL(url).hostname;
+          ogImage = firecrawlResult.metadata.ogImage || '';
+          siteName = firecrawlResult.metadata.siteName || new URL(url).hostname;
+          metaDescription = firecrawlResult.metadata.description || '';
+          fetchSuccess = true;
+          console.log('Content fetched via Firecrawl');
+        }
+      }
+      
+      // Final fallback - just use URL info
+      if (!fetchSuccess) {
         title = new URL(url).hostname.replace('www.', '');
         textContent = `Content from: ${url}`;
       }
@@ -455,11 +574,13 @@ serve(async (req) => {
 
     // If YouTube without transcript, use Perplexity to search for video info
     if (isYouTube && transcriptSource === 'none' && PERPLEXITY_API_KEY) {
+      console.log('YouTube without transcript - using Perplexity web search');
       const searchResult = await searchVideoInfo(title, url, PERPLEXITY_API_KEY);
       if (searchResult) {
         summary = searchResult.summary;
         tags = searchResult.tags;
         transcriptSource = 'perplexity-search';
+        textContent = `Summary based on web search:\n\n${summary}`;
         console.log('Got summary from Perplexity search');
       }
     }

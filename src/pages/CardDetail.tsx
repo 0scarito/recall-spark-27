@@ -160,7 +160,12 @@ const CardDetail = () => {
             </TabsContent>
 
             <TabsContent value="reader" className="flex-1 m-0 overflow-hidden">
-              <ReaderView card={card} />
+              <ReaderView 
+                card={card} 
+                onRefresh={(updates) => {
+                  setCards(prev => prev.map(c => c.id === card.id ? { ...c, ...updates } : c));
+                }}
+              />
             </TabsContent>
           </Tabs>
         </div>
