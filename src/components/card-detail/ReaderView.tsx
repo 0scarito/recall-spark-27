@@ -1,13 +1,15 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Share, Copy, ExternalLink, Clock, Play, AlertTriangle, CheckCircle } from "lucide-react";
+import { Share, Copy, ExternalLink, Clock, Play, AlertTriangle, CheckCircle, RefreshCw, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { KnowledgeCard, CardMetadata } from "@/lib/storage";
+import { supabase } from "@/integrations/supabase/client";
 
 interface ReaderViewProps {
   card: KnowledgeCard;
+  onRefresh?: (updatedCard: Partial<KnowledgeCard>) => void;
 }
 
 interface TranscriptSegment {
@@ -19,19 +21,34 @@ interface TranscriptSegment {
 
 type TranscriptSource = 'youtube-api' | 'youtubetranscript.com' | 'proxy-api' | 'perplexity-search' | 'none';
 
-const ReaderView = ({ card }: ReaderViewProps) => {
+const ReaderView = ({ card, onRefresh }: ReaderViewProps) => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  
   const textContent = card.metadata?.text || '';
   const transcriptSource = (card.metadata?.transcriptSource as TranscriptSource) || 
     (textContent.length > 200 ? 'unknown' : 'none');
   const hasFullTranscript = card.metadata?.hasFullTranscript ?? (textContent.length > 200);
   
+  // Check if content contains error patterns (indicates failed fetch)
+  const hasErrorContent = useMemo(() => {
+    const errorPatterns = [
+      /sorry.*blocking/i,
+      /youtube.*blocking/i,
+      /unable.*fetch/i,
+      /we're sorry/i,
+      /preventing us from/i,
+      /working on a fix/i,
+    ];
+    return errorPatterns.some(pattern => pattern.test(textContent));
+  }, [textContent]);
+  
   const readingTime = Math.ceil((textContent.split(' ').length || 0) / 200);
   const isYouTube = card.url?.includes('youtube.com') || card.url?.includes('youtu.be');
   
   const segments = useMemo(() => {
-    if (!textContent) return [];
+    if (!textContent || hasErrorContent) return [];
     return parseContentToSegments(textContent, isYouTube);
-  }, [textContent, isYouTube]);
+  }, [textContent, isYouTube, hasErrorContent]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(textContent);
@@ -46,13 +63,73 @@ const ReaderView = ({ card }: ReaderViewProps) => {
     }
   };
 
+  const handleRefresh = async () => {
+    if (!card.url) return;
+    
+    setIsRefreshing(true);
+    try {
+      toast.info('Re-fetching content...');
+      
+      const { data, error } = await supabase.functions.invoke('summarize-content', {
+        body: { url: card.url }
+      });
+      
+      if (error) throw error;
+      
+      // Update the card in the database
+      const updatedMetadata = {
+        ...card.metadata,
+        text: data.text || '',
+        transcriptSource: data.meta?.transcriptSource || 'none',
+        hasFullTranscript: data.meta?.hasFullTranscript || false,
+        image: data.meta?.ogImage || card.metadata?.image,
+        siteName: data.meta?.siteName || card.metadata?.siteName,
+      };
+      
+      const { error: updateError } = await supabase
+        .from('knowledge_cards')
+        .update({
+          summary: data.summary,
+          tags: data.tags,
+          metadata: updatedMetadata,
+        })
+        .eq('id', card.id);
+      
+      if (updateError) throw updateError;
+      
+      // Notify parent to refresh card data
+      if (onRefresh) {
+        onRefresh({
+          summary: data.summary,
+          tags: data.tags,
+          metadata: updatedMetadata as CardMetadata,
+        });
+      }
+      
+      if (data.meta?.hasFullTranscript) {
+        toast.success('Content refreshed with full transcript!');
+      } else if (data.meta?.transcriptSource === 'perplexity-search') {
+        toast.success('Content refreshed with web search summary');
+      } else {
+        toast.success('Content refreshed');
+      }
+    } catch (err) {
+      console.error('Error refreshing content:', err);
+      toast.error('Failed to refresh content');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const showRefreshButton = isYouTube && (!hasFullTranscript || hasErrorContent);
+
   return (
     <div className="flex-1 flex flex-col h-full">
       {/* Reader Header */}
       <div className="h-14 border-b border-border px-6 flex items-center justify-between flex-shrink-0 bg-background">
         <div className="flex items-center gap-3">
           <h2 className="text-lg font-medium">Reader</h2>
-          {readingTime > 0 && (
+          {readingTime > 0 && !hasErrorContent && (
             <span className="text-xs text-muted-foreground flex items-center gap-1">
               <Clock className="w-3 h-3" />
               {readingTime} min read
@@ -60,10 +137,10 @@ const ReaderView = ({ card }: ReaderViewProps) => {
           )}
           {isYouTube && (
             <Badge 
-              variant={hasFullTranscript ? "secondary" : "outline"} 
+              variant={hasFullTranscript && !hasErrorContent ? "secondary" : "outline"} 
               className="text-xs flex items-center gap-1"
             >
-              {hasFullTranscript ? (
+              {hasFullTranscript && !hasErrorContent ? (
                 <>
                   <CheckCircle className="w-3 h-3" />
                   Full transcript
@@ -78,7 +155,22 @@ const ReaderView = ({ card }: ReaderViewProps) => {
           )}
         </div>
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="sm" onClick={handleCopy}>
+          {showRefreshButton && (
+            <Button 
+              variant="ghost" 
+              size="sm" 
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+            >
+              {isRefreshing ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4 mr-2" />
+              )}
+              Retry
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" onClick={handleCopy} disabled={!textContent || hasErrorContent}>
             <Copy className="w-4 h-4 mr-2" />
             Copy
           </Button>
@@ -97,14 +189,38 @@ const ReaderView = ({ card }: ReaderViewProps) => {
       </div>
 
       {/* Transcript Warning */}
-      {isYouTube && !hasFullTranscript && (
-        <div className="mx-6 mt-4 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-start gap-3">
+      {isYouTube && (!hasFullTranscript || hasErrorContent) && (
+        <div className="mx-6 mt-4 p-4 rounded-lg bg-amber-500/10 border border-amber-500/20 flex items-start gap-3">
           <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-          <div className="text-sm">
+          <div className="flex-1">
             <p className="font-medium text-amber-600 dark:text-amber-400">Transcript unavailable</p>
-            <p className="text-muted-foreground mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               YouTube blocked transcript access. The summary was generated using web search information.
             </p>
+            <div className="flex gap-2 mt-3">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleRefresh}
+                disabled={isRefreshing}
+                className="text-xs"
+              >
+                {isRefreshing ? (
+                  <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                ) : (
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                )}
+                Retry fetching
+              </Button>
+              {card.url && (
+                <Button variant="outline" size="sm" asChild className="text-xs">
+                  <a href={card.url} target="_blank" rel="noreferrer">
+                    <ExternalLink className="w-3 h-3 mr-1" />
+                    Watch on YouTube
+                  </a>
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -151,14 +267,34 @@ const ReaderView = ({ card }: ReaderViewProps) => {
             </div>
           ) : (
             <div className="text-center py-12">
-              <p className="text-muted-foreground">No content available</p>
-              {card.url && (
-                <Button variant="link" asChild className="mt-2">
-                  <a href={card.url} target="_blank" rel="noreferrer">
-                    View original source
-                  </a>
-                </Button>
-              )}
+              <AlertTriangle className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+              <p className="text-muted-foreground mb-4">
+                {hasErrorContent ? 'Content could not be fetched' : 'No content available'}
+              </p>
+              <div className="flex gap-2 justify-center">
+                {showRefreshButton && (
+                  <Button 
+                    variant="outline" 
+                    onClick={handleRefresh}
+                    disabled={isRefreshing}
+                  >
+                    {isRefreshing ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4 mr-2" />
+                    )}
+                    Retry fetching
+                  </Button>
+                )}
+                {card.url && (
+                  <Button variant="link" asChild>
+                    <a href={card.url} target="_blank" rel="noreferrer">
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      View original source
+                    </a>
+                  </Button>
+                )}
+              </div>
             </div>
           )}
         </div>
