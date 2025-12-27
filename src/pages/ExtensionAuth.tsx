@@ -5,7 +5,7 @@ import Auth from "@/components/Auth";
 const ExtensionAuth = () => {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [tokenSent, setTokenSent] = useState(false);
 
   useEffect(() => {
     // Check if this page was opened by the extension
@@ -13,7 +13,6 @@ const ExtensionAuth = () => {
     const isExtension = urlParams.get('extension') === 'true';
 
     if (!isExtension) {
-      // Redirect to home if not opened by extension
       window.location.href = '/';
       return;
     }
@@ -23,72 +22,45 @@ const ExtensionAuth = () => {
       setUser(session?.user ?? null);
       setLoading(false);
 
-      // If user is logged in, send token to extension
       if (session?.access_token) {
-        sendTokenToExtension(session.access_token);
+        sendTokenToExtension(session.access_token, session.refresh_token);
       }
     });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      if (session?.access_token) {
-        sendTokenToExtension(session.access_token);
+      if (session?.access_token && !tokenSent) {
+        sendTokenToExtension(session.access_token, session.refresh_token);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [tokenSent]);
 
-  const sendTokenToExtension = (token: string) => {
-    try {
-      // Send token to extension via postMessage
-      // The extension will be listening for this message
-      window.postMessage(
-        {
-          type: 'RECAP_EXTENSION_AUTH',
-          token: token,
-          success: true
-        },
-        window.location.origin
-      );
+  const sendTokenToExtension = (accessToken: string, refreshToken: string | undefined) => {
+    setTokenSent(true);
+    
+    // Method 1: Send via postMessage to content script
+    window.postMessage(
+      {
+        type: 'RECAP_EXTENSION_AUTH',
+        token: accessToken,
+        refreshToken: refreshToken,
+        success: true
+      },
+      window.location.origin
+    );
 
-      // Also try to send to opener window if available
-      if (window.opener && !window.opener.closed) {
-        window.opener.postMessage(
-          {
-            type: 'RECAP_EXTENSION_AUTH',
-            token: token,
-            success: true
-          },
-          window.location.origin
-        );
-      }
-
-      // Try to send via chrome.runtime if available (for extension context)
-      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) {
-        chrome.runtime.sendMessage({
-          type: 'RECAP_EXTENSION_AUTH',
-          token: token,
-          success: true
-        }).catch(() => {
-          // Extension might not be listening, that's okay
-        });
-      }
-
-      // Show success message
-      setError(null);
-      
-      // Close window after a short delay
-      setTimeout(() => {
-        if (window.opener) {
-          window.close();
-        }
-      }, 1500);
-    } catch (err: any) {
-      console.error('Error sending token to extension:', err);
-      setError('Failed to send token to extension');
+    // Method 2: Update URL with token for extension to detect via tab monitoring
+    // This is a backup method if postMessage fails
+    const newUrl = new URL(window.location.href);
+    newUrl.searchParams.set('auth_success', 'true');
+    newUrl.searchParams.set('token', accessToken);
+    if (refreshToken) {
+      newUrl.searchParams.set('refresh_token', refreshToken);
     }
+    window.history.replaceState({}, '', newUrl.toString());
   };
 
   if (loading) {
@@ -102,15 +74,9 @@ const ExtensionAuth = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
-        {error && (
-          <div className="mb-4 p-4 bg-destructive/10 text-destructive rounded-lg">
-            {error}
-          </div>
-        )}
-
         {user ? (
           <div className="text-center space-y-4">
-            <div className="text-2xl font-bold">✅ Authenticated!</div>
+            <div className="text-2xl font-bold text-foreground">✅ Authenticated!</div>
             <p className="text-muted-foreground">
               Your extension is now connected. You can close this window.
             </p>
@@ -121,7 +87,7 @@ const ExtensionAuth = () => {
         ) : (
           <div className="space-y-4">
             <div className="text-center mb-6">
-              <h2 className="text-2xl font-bold mb-2">Connect Extension</h2>
+              <h2 className="text-2xl font-bold mb-2 text-foreground">Connect Extension</h2>
               <p className="text-muted-foreground">
                 Sign in to connect your Chrome extension
               </p>
@@ -135,4 +101,3 @@ const ExtensionAuth = () => {
 };
 
 export default ExtensionAuth;
-
