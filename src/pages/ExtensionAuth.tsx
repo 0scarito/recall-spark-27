@@ -5,7 +5,7 @@ import Auth from "@/components/Auth";
 const ExtensionAuth = () => {
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [tokenSent, setTokenSent] = useState(false);
 
   useEffect(() => {
     // Check if this page was opened by the extension
@@ -13,7 +13,6 @@ const ExtensionAuth = () => {
     const isExtension = urlParams.get('extension') === 'true';
 
     if (!isExtension) {
-      // Redirect to home if not opened by extension
       window.location.href = '/';
       return;
     }
@@ -23,86 +22,45 @@ const ExtensionAuth = () => {
       setUser(session?.user ?? null);
       setLoading(false);
 
-      // If user is logged in, send token to extension
       if (session?.access_token) {
-        // Small delay to ensure content script is loaded
-        setTimeout(() => {
-          sendTokenToExtension(session.access_token);
-        }, 1000);
+        sendTokenToExtension(session.access_token, session.refresh_token);
       }
     });
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
-      if (session?.access_token) {
-        // Small delay to ensure content script is loaded
-        setTimeout(() => {
-          sendTokenToExtension(session.access_token);
-        }, 1000);
+      if (session?.access_token && !tokenSent) {
+        sendTokenToExtension(session.access_token, session.refresh_token);
       }
     });
 
     return () => subscription.unsubscribe();
-  }, []);
+  }, [tokenSent]);
 
-  const sendTokenToExtension = (token: string) => {
-    try {
-      console.log('[ExtensionAuth] Sending token to extension');
-      
-      // Method 1: Store token in window for content script to pick up
-      (window as any).__RECAP_AUTH_TOKEN__ = token;
+  const sendTokenToExtension = (accessToken: string, refreshToken: string | undefined) => {
+    setTokenSent(true);
+    
+    // Method 1: Send via postMessage to content script
+    window.postMessage(
+      {
+        type: 'RECAP_EXTENSION_AUTH',
+        token: accessToken,
+        refreshToken: refreshToken,
+        success: true
+      },
+      window.location.origin
+    );
 
-      // Method 2: Send token to extension via postMessage
-      // The content script will forward this to the extension
-      window.postMessage(
-        {
-          type: 'RECAP_EXTENSION_AUTH',
-          token: token,
-          success: true
-        },
-        window.location.origin
-      );
-
-      // Method 3: Also try to send to opener window if available
-      if (window.opener && !window.opener.closed) {
-        window.opener.postMessage(
-          {
-            type: 'RECAP_EXTENSION_AUTH',
-            token: token,
-            success: true
-          },
-          window.location.origin
-        );
-      }
-
-      // Method 4: Try to send via chrome.runtime if available (for extension context)
-      if (typeof chrome !== 'undefined' && chrome.runtime && (chrome.runtime as any).id) {
-        chrome.runtime.sendMessage((chrome.runtime as any).id, {
-          type: 'RECAP_EXTENSION_AUTH',
-          token: token,
-          success: true
-        }).catch(() => {
-          // Extension might not be listening, that's okay
-        });
-      }
-
-      // Show success message
-      setError(null);
-      
-      // Give time for message to be received, then close window
-      setTimeout(() => {
-        try {
-          window.close();
-        } catch (e) {
-          // Window might not be closable (user opened it manually)
-          console.log('Window cannot be closed automatically');
-        }
-      }, 2000);
-    } catch (err: any) {
-      console.error('Error sending token to extension:', err);
-      setError('Failed to send token to extension. Please try again.');
+    // Method 2: Update URL with token for extension to detect via tab monitoring
+    // This is a backup method if postMessage fails
+    const newUrl = new URL(window.location.href);
+    newUrl.searchParams.set('auth_success', 'true');
+    newUrl.searchParams.set('token', accessToken);
+    if (refreshToken) {
+      newUrl.searchParams.set('refresh_token', refreshToken);
     }
+    window.history.replaceState({}, '', newUrl.toString());
   };
 
   if (loading) {
@@ -116,31 +74,20 @@ const ExtensionAuth = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
       <div className="w-full max-w-md">
-        {error && (
-          <div className="mb-4 p-4 bg-destructive/10 text-destructive rounded-lg">
-            {error}
-          </div>
-        )}
-
         {user ? (
           <div className="text-center space-y-4">
-            <div className="text-2xl font-bold text-green-500">✅ Authenticated!</div>
+            <div className="text-2xl font-bold text-foreground">✅ Authenticated!</div>
             <p className="text-muted-foreground">
-              Your extension is now connected. This window will close automatically.
+              Your extension is now connected. You can close this window.
             </p>
             <p className="text-sm text-muted-foreground">
-              You can now use the extension to save content to your library.
+              If the window doesn't close automatically, you can close it manually.
             </p>
-            <div className="mt-4 p-3 bg-green-500/10 rounded-lg">
-              <p className="text-sm text-green-400">
-                Token sent to extension successfully!
-              </p>
-            </div>
           </div>
         ) : (
           <div className="space-y-4">
             <div className="text-center mb-6">
-              <h2 className="text-2xl font-bold mb-2">Connect Extension</h2>
+              <h2 className="text-2xl font-bold mb-2 text-foreground">Connect Extension</h2>
               <p className="text-muted-foreground">
                 Sign in to connect your Chrome extension
               </p>
@@ -154,4 +101,3 @@ const ExtensionAuth = () => {
 };
 
 export default ExtensionAuth;
-

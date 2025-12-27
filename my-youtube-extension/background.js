@@ -1,6 +1,5 @@
 // Background service worker - handles communication between content scripts and popup
 
-// Configuration - update with your Supabase URL
 const CONFIG = {
   appUrl: 'https://recall-spark-27.lovable.app',
   supabaseUrl: 'https://mvedoscvslmbieugxknd.supabase.co',
@@ -9,17 +8,15 @@ const CONFIG = {
 
 // Check if URL is YouTube
 function isYouTubeUrl(url) {
-  return url.includes('youtube.com/watch') || url.includes('youtu.be/');
+  return url && (url.includes('youtube.com/watch') || url.includes('youtu.be/'));
 }
 
 // Inject content script if needed
 async function ensureContentScript(tabId, isYouTube) {
   try {
-    // Try to ping existing content script
     const response = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
     return response?.status === 'ok';
   } catch (e) {
-    // Content script not loaded, inject it
     const scriptFile = isYouTube ? 'content-youtube.js' : 'content-generic.js';
     await chrome.scripting.executeScript({
       target: { tabId },
@@ -34,22 +31,30 @@ async function extractFromTab(tabId, url) {
   const isYouTube = isYouTubeUrl(url);
   
   await ensureContentScript(tabId, isYouTube);
-  
-  // Small delay to ensure script is ready
   await new Promise(resolve => setTimeout(resolve, 100));
 
   const action = isYouTube ? 'extractYouTubeData' : 'extractPageData';
   const data = await chrome.tabs.sendMessage(tabId, { action });
   
-  return {
-    ...data,
-    isYouTube,
-    sourceUrl: url
-  };
+  return { ...data, isYouTube, sourceUrl: url };
 }
 
-// Save to Supabase via edge function
+// Save to backend via edge function
 async function saveToBackend(data, accessToken) {
+  // Input validation
+  if (!data.sourceUrl || typeof data.sourceUrl !== 'string') {
+    throw new Error('Invalid URL');
+  }
+  
+  // Limit content size to prevent abuse
+  const maxContentLength = 100000;
+  if (data.transcript && data.transcript.length > maxContentLength) {
+    data.transcript = data.transcript.substring(0, maxContentLength);
+  }
+  if (data.content && data.content.length > maxContentLength) {
+    data.content = data.content.substring(0, maxContentLength);
+  }
+
   const response = await fetch(`${CONFIG.supabaseUrl}/functions/v1/save-from-extension`, {
     method: 'POST',
     headers: {
@@ -62,149 +67,60 @@ async function saveToBackend(data, accessToken) {
   if (!response.ok) {
     let errorText = await response.text();
     try {
-      // Try to parse as JSON for better error messages
       const errorJson = JSON.parse(errorText);
       errorText = errorJson.error || errorJson.message || errorText;
-    } catch (e) {
-      // Not JSON, use as-is
-    }
+    } catch (e) {}
     
-    // Check for auth errors specifically
-    if (response.status === 401 || errorText.includes('Unauthorized') || errorText.includes('sign in')) {
-      throw new Error(JSON.stringify({ error: 'Unauthorized - please sign in' }));
+    if (response.status === 401 || errorText.includes('Unauthorized')) {
+      throw new Error('Unauthorized - please sign in');
     }
-    
     throw new Error(`Failed to save: ${errorText}`);
   }
 
   return response.json();
 }
 
-// Get stored auth token
-async function getAuthToken() {
-  const result = await chrome.storage.local.get(['supabase_access_token']);
-  return result.supabase_access_token;
+// Auth token management
+async function getAuthData() {
+  const result = await chrome.storage.local.get(['supabase_access_token', 'supabase_refresh_token']);
+  return {
+    accessToken: result.supabase_access_token,
+    refreshToken: result.supabase_refresh_token
+  };
 }
 
-// Store auth token
-async function setAuthToken(token) {
-  await chrome.storage.local.set({ supabase_access_token: token });
-}
-
-// Clear auth token
-async function clearAuthToken() {
-  await chrome.storage.local.remove(['supabase_access_token']);
-}
-
-// Inject auth content script into the auth page
-async function injectAuthScript(tabId) {
-  try {
-    // Wait a bit for the page to load
-    await new Promise(resolve => setTimeout(resolve, 500));
-    
-    await chrome.scripting.executeScript({
-      target: { tabId },
-      files: ['content-auth.js']
-    });
-    console.log('[Background] Auth script injected successfully');
-  } catch (error) {
-    console.error('[Background] Failed to inject auth script:', error);
-    // Try again after a delay
-    setTimeout(async () => {
-      try {
-        await chrome.scripting.executeScript({
-          target: { tabId },
-          files: ['content-auth.js']
-        });
-      } catch (e) {
-        console.error('[Background] Retry failed:', e);
-      }
-    }, 1000);
-  }
-}
-
-// Open authentication page and listen for token
-async function authenticateWithApp() {
-  return new Promise((resolve, reject) => {
-    let resolved = false;
-    let messageListener = null;
-    let tabUpdateListener = null;
-    let timeout = null;
-
-    const cleanup = () => {
-      if (messageListener) {
-        chrome.runtime.onMessage.removeListener(messageListener);
-      }
-      if (tabUpdateListener) {
-        chrome.tabs.onUpdated.removeListener(tabUpdateListener);
-      }
-      if (timeout) {
-        clearTimeout(timeout);
-      }
-    };
-
-    // Open auth page
-    chrome.tabs.create({
-      url: `${CONFIG.appUrl}/extension-auth?extension=true`,
-      active: true
-    }, async (tab) => {
-      console.log('[Background] Auth tab opened, injecting script');
-      
-      // Inject content script to bridge messages
-      await injectAuthScript(tab.id);
-
-      // Listen for messages from the auth page
-      messageListener = (message, sender, sendResponse) => {
-        if (message.type === 'RECAP_EXTENSION_AUTH' && message.success && !resolved) {
-          resolved = true;
-          console.log('[Background] Received auth token, storing...');
-          // Store the token
-          setAuthToken(message.token).then(() => {
-            console.log('[Background] Token stored successfully');
-            // Close the auth tab
-            setTimeout(() => {
-              chrome.tabs.remove(tab.id).catch(() => {
-                // Tab might already be closed
-              });
-            }, 1000);
-            cleanup();
-            resolve(message.token);
-          }).catch((error) => {
-            console.error('[Background] Failed to store token:', error);
-            cleanup();
-            reject(error);
-          });
-          return true;
-        }
-      };
-
-      chrome.runtime.onMessage.addListener(messageListener);
-
-      // Also listen for tab updates to inject script when page loads
-      tabUpdateListener = (tabId, changeInfo, updatedTab) => {
-        if (tabId === tab.id && changeInfo.status === 'complete' && !resolved) {
-          injectAuthScript(tabId);
-        }
-      };
-
-      chrome.tabs.onUpdated.addListener(tabUpdateListener);
-
-      // Timeout after 5 minutes
-      timeout = setTimeout(() => {
-        if (!resolved) {
-          resolved = true;
-          cleanup();
-          reject(new Error('Authentication timeout'));
-        }
-      }, 300000);
-    });
+async function setAuthData(accessToken, refreshToken) {
+  await chrome.storage.local.set({ 
+    supabase_access_token: accessToken,
+    supabase_refresh_token: refreshToken 
   });
 }
 
-// Handle messages from popup
+async function clearAuthData() {
+  await chrome.storage.local.remove(['supabase_access_token', 'supabase_refresh_token']);
+}
+
+// Handle messages from popup and content scripts
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   (async () => {
     try {
+      // Handle auth token from content script
+      if (request.type === 'RECAP_EXTENSION_AUTH' && request.success) {
+        console.log('[Recap] Received auth token');
+        await setAuthData(request.token, request.refreshToken);
+        
+        // Close auth tab
+        if (sender.tab?.id) {
+          try {
+            await chrome.tabs.remove(sender.tab.id);
+          } catch (e) {
+            console.log('[Recap] Could not close auth tab:', e);
+          }
+        }
+        sendResponse({ success: true });
+        return;
+      }
+
       switch (request.action) {
         case 'extractCurrentPage': {
           const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -224,141 +140,51 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
             return;
           }
           
+          const { accessToken } = await getAuthData();
+          if (!accessToken) {
+            sendResponse({ error: 'Not authenticated', needsAuth: true });
+            return;
+          }
+
           const data = await extractFromTab(tab.id, tab.url);
           if (data.error) {
             sendResponse({ error: data.error });
             return;
           }
 
-          const token = await getAuthToken();
-          if (!token) {
-            sendResponse({ error: 'Not authenticated', needsAuth: true });
-            return;
-          }
-
-          const result = await saveToBackend(data, token);
+          const result = await saveToBackend(data, accessToken);
           sendResponse({ success: true, ...result });
           break;
         }
 
-        case 'authenticate': {
-          try {
-            const token = await authenticateWithApp();
-            sendResponse({ success: true, token });
-          } catch (error) {
-            sendResponse({ error: error.message });
-          }
+        case 'checkAuth': {
+          const { accessToken } = await getAuthData();
+          sendResponse({ isAuthenticated: !!accessToken });
           break;
         }
 
         case 'setAuthToken': {
-          await setAuthToken(request.token);
+          await setAuthData(request.token, request.refreshToken);
           sendResponse({ success: true });
           break;
         }
 
-        case 'getAuthToken': {
-          const token = await getAuthToken();
-          sendResponse({ token });
-          break;
-        }
-
-        case 'clearAuthToken': {
-          await clearAuthToken();
+        case 'clearAuth': {
+          await clearAuthData();
           sendResponse({ success: true });
-          break;
-        }
-
-        case 'checkAuth': {
-          const token = await getAuthToken();
-          sendResponse({ isAuthenticated: !!token });
           break;
         }
 
         default:
-          // Check if it's an auth token message from content script
-          if (request.type === 'RECAP_EXTENSION_AUTH' && request.success) {
-            // Verify sender is from our app
-            if (sender.tab && sender.tab.url && sender.tab.url.includes(CONFIG.appUrl)) {
-              await setAuthToken(request.token);
-              sendResponse({ success: true });
-              // Close the auth tab
-              if (sender.tab && sender.tab.id) {
-                chrome.tabs.remove(sender.tab.id);
-              }
-              return;
-            }
-          }
           sendResponse({ error: 'Unknown action' });
       }
     } catch (error) {
-      console.error('Background script error:', error);
+      console.error('[Recap] Background error:', error);
       sendResponse({ error: error.message });
     }
   })();
   
-  return true; // Keep channel open for async response
+  return true;
 });
-
-// Listen for messages from web pages (for auth token)
-// This allows the ExtensionAuth page to send tokens directly
-if (chrome.runtime.onMessageExternal) {
-  chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
-    if (message.type === 'RECAP_EXTENSION_AUTH' && message.success) {
-      // Verify sender is from our app
-      if (sender.url && sender.url.includes(CONFIG.appUrl)) {
-        setAuthToken(message.token).then(() => {
-          sendResponse({ success: true });
-          // Close the auth tab if we can find it
-          chrome.tabs.query({ url: `${CONFIG.appUrl}/extension-auth*` }, (tabs) => {
-            if (tabs.length > 0) {
-              chrome.tabs.remove(tabs[0].id);
-            }
-          });
-        });
-        return true;
-      }
-    }
-  });
-}
-
-
-// Listen for extension icon click (quick save)
-chrome.action.onClicked.addListener(async (tab) => {
-  // This only fires if popup is not defined
-  // Since we have a popup, this won't be called
-});
-
-// Validate stored token on startup
-async function validateStoredToken() {
-  const token = await getAuthToken();
-  if (token) {
-    // Try to validate token by making a test request
-    try {
-      const response = await fetch(`${CONFIG.supabaseUrl}/functions/v1/save-from-extension`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ test: true })
-      });
-      
-      // If unauthorized, clear the token
-      if (response.status === 401) {
-        console.log('[Background] Stored token is invalid, clearing...');
-        await clearAuthToken();
-      } else {
-        console.log('[Background] Stored token is valid');
-      }
-    } catch (error) {
-      console.error('[Background] Error validating token:', error);
-      // Don't clear on network errors, might be temporary
-    }
-  }
-}
-
-// Run validation on startup
-validateStoredToken();
 
 console.log('[Recap Extension] Background service worker loaded');

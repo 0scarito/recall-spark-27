@@ -6,12 +6,13 @@
   "permissions": [
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "tabs"
   ],
   "host_permissions": [
     "https://www.youtube.com/*",
     "https://youtube.com/*",
-    "https://recall-spark-27.lovable.app/*",
+    "https://*.lovable.app/*",
     "*://*/*"
   ],
   "action": {
@@ -32,6 +33,11 @@
       "matches": ["https://www.youtube.com/*", "https://youtube.com/*"],
       "js": ["content-youtube.js"],
       "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://*.lovable.app/extension-auth*"],
+      "js": ["content-auth.js"],
+      "run_at": "document_idle"
     }
   ],
   "icons": {
@@ -41,4 +47,3 @@
     "128": "icons/icon128.png"
   }
 }
-
