@@ -178,70 +178,47 @@ async function authenticate() {
   elements.authButton.disabled = true;
 
   try {
-    // Open auth page
-    const authTab = await chrome.tabs.create({
-      url: `${APP_URL}/extension-auth?extension=true`,
-      active: true
-    });
-
-    // Listen for messages from the auth page
-    const messageListener = async (message, sender, sendResponse) => {
-      if (message.type === 'RECAP_EXTENSION_AUTH' && message.success) {
-        // Store the token
-        await chrome.runtime.sendMessage({
-          action: 'setAuthToken',
-          token: message.token
-        });
-
-        // Close the auth tab
-        chrome.tabs.remove(authTab.id);
-
-        // Update UI
+    // Use background script's authenticate function
+    const response = await chrome.runtime.sendMessage({ action: 'authenticate' });
+    
+    if (response.success) {
+      // Token was stored by background script
+      elements.authStatus.textContent = '✓ Authenticated!';
+      elements.authStatus.className = 'auth-status authenticated';
+      
+      // Reload to show content
+      setTimeout(() => {
+        init();
+      }, 500);
+    } else {
+      throw new Error(response.error || 'Authentication failed');
+    }
+  } catch (error) {
+    console.error('Auth error:', error);
+    elements.authStatus.textContent = error.message || 'Failed to authenticate. Please try again.';
+    elements.authButton.disabled = false;
+    
+    // Also set up a polling mechanism to check if auth completed
+    let pollCount = 0;
+    const maxPolls = 60; // 30 seconds
+    
+    const pollAuth = setInterval(async () => {
+      pollCount++;
+      const isAuth = await checkAuth();
+      
+      if (isAuth) {
+        clearInterval(pollAuth);
         elements.authStatus.textContent = '✓ Authenticated!';
         elements.authStatus.className = 'auth-status authenticated';
-        
-        // Remove listener
-        chrome.runtime.onMessage.removeListener(messageListener);
-        
-        // Reload to show content
+        elements.authButton.disabled = false;
         setTimeout(() => {
           init();
         }, 500);
+      } else if (pollCount >= maxPolls) {
+        clearInterval(pollAuth);
+        elements.authButton.disabled = false;
       }
-    };
-
-    chrome.runtime.onMessage.addListener(messageListener);
-
-    // Also listen for window messages (postMessage from the page)
-    window.addEventListener('message', (event) => {
-      if (event.origin !== APP_URL) return;
-      
-      if (event.data.type === 'RECAP_EXTENSION_AUTH' && event.data.success) {
-        chrome.runtime.sendMessage({
-          action: 'setAuthToken',
-          token: event.data.token
-        }).then(() => {
-          chrome.tabs.remove(authTab.id);
-          elements.authStatus.textContent = '✓ Authenticated!';
-          elements.authStatus.className = 'auth-status authenticated';
-          setTimeout(() => {
-            init();
-          }, 500);
-        });
-      }
-    });
-
-    // Timeout after 5 minutes
-    setTimeout(() => {
-      chrome.runtime.onMessage.removeListener(messageListener);
-      elements.authButton.disabled = false;
-      elements.authStatus.textContent = 'Authentication timeout. Please try again.';
-    }, 300000);
-
-  } catch (error) {
-    console.error('Auth error:', error);
-    elements.authStatus.textContent = 'Failed to open sign-in page. Please try again.';
-    elements.authButton.disabled = false;
+    }, 500);
   }
 }
 

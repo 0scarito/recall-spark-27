@@ -99,46 +99,103 @@ async function clearAuthToken() {
 // Inject auth content script into the auth page
 async function injectAuthScript(tabId) {
   try {
+    // Wait a bit for the page to load
+    await new Promise(resolve => setTimeout(resolve, 500));
+    
     await chrome.scripting.executeScript({
       target: { tabId },
       files: ['content-auth.js']
     });
+    console.log('[Background] Auth script injected successfully');
   } catch (error) {
-    console.error('Failed to inject auth script:', error);
+    console.error('[Background] Failed to inject auth script:', error);
+    // Try again after a delay
+    setTimeout(async () => {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId },
+          files: ['content-auth.js']
+        });
+      } catch (e) {
+        console.error('[Background] Retry failed:', e);
+      }
+    }, 1000);
   }
 }
 
 // Open authentication page and listen for token
 async function authenticateWithApp() {
   return new Promise((resolve, reject) => {
+    let resolved = false;
+    let messageListener = null;
+    let tabUpdateListener = null;
+    let timeout = null;
+
+    const cleanup = () => {
+      if (messageListener) {
+        chrome.runtime.onMessage.removeListener(messageListener);
+      }
+      if (tabUpdateListener) {
+        chrome.tabs.onUpdated.removeListener(tabUpdateListener);
+      }
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+    };
+
     // Open auth page
     chrome.tabs.create({
       url: `${CONFIG.appUrl}/extension-auth?extension=true`,
       active: true
     }, async (tab) => {
+      console.log('[Background] Auth tab opened, injecting script');
+      
       // Inject content script to bridge messages
       await injectAuthScript(tab.id);
 
       // Listen for messages from the auth page
-      const messageListener = (message, sender, sendResponse) => {
-        if (message.type === 'RECAP_EXTENSION_AUTH' && message.success) {
+      messageListener = (message, sender, sendResponse) => {
+        if (message.type === 'RECAP_EXTENSION_AUTH' && message.success && !resolved) {
+          resolved = true;
+          console.log('[Background] Received auth token, storing...');
           // Store the token
           setAuthToken(message.token).then(() => {
+            console.log('[Background] Token stored successfully');
             // Close the auth tab
-            chrome.tabs.remove(tab.id);
-            // Remove listener
-            chrome.runtime.onMessage.removeListener(messageListener);
+            setTimeout(() => {
+              chrome.tabs.remove(tab.id).catch(() => {
+                // Tab might already be closed
+              });
+            }, 1000);
+            cleanup();
             resolve(message.token);
+          }).catch((error) => {
+            console.error('[Background] Failed to store token:', error);
+            cleanup();
+            reject(error);
           });
+          return true;
         }
       };
 
       chrome.runtime.onMessage.addListener(messageListener);
 
+      // Also listen for tab updates to inject script when page loads
+      tabUpdateListener = (tabId, changeInfo, updatedTab) => {
+        if (tabId === tab.id && changeInfo.status === 'complete' && !resolved) {
+          injectAuthScript(tabId);
+        }
+      };
+
+      chrome.tabs.onUpdated.addListener(tabUpdateListener);
+
       // Timeout after 5 minutes
-      setTimeout(() => {
-        chrome.runtime.onMessage.removeListener(messageListener);
-        reject(new Error('Authentication timeout'));
+      timeout = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          cleanup();
+          reject(new Error('Authentication timeout'));
+        }
       }, 300000);
     });
   });
@@ -271,5 +328,37 @@ chrome.action.onClicked.addListener(async (tab) => {
   // This only fires if popup is not defined
   // Since we have a popup, this won't be called
 });
+
+// Validate stored token on startup
+async function validateStoredToken() {
+  const token = await getAuthToken();
+  if (token) {
+    // Try to validate token by making a test request
+    try {
+      const response = await fetch(`${CONFIG.supabaseUrl}/functions/v1/save-from-extension`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ test: true })
+      });
+      
+      // If unauthorized, clear the token
+      if (response.status === 401) {
+        console.log('[Background] Stored token is invalid, clearing...');
+        await clearAuthToken();
+      } else {
+        console.log('[Background] Stored token is valid');
+      }
+    } catch (error) {
+      console.error('[Background] Error validating token:', error);
+      // Don't clear on network errors, might be temporary
+    }
+  }
+}
+
+// Run validation on startup
+validateStoredToken();
 
 console.log('[Recap Extension] Background service worker loaded');

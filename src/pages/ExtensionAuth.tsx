@@ -25,7 +25,10 @@ const ExtensionAuth = () => {
 
       // If user is logged in, send token to extension
       if (session?.access_token) {
-        sendTokenToExtension(session.access_token);
+        // Small delay to ensure content script is loaded
+        setTimeout(() => {
+          sendTokenToExtension(session.access_token);
+        }, 1000);
       }
     });
 
@@ -33,7 +36,10 @@ const ExtensionAuth = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user ?? null);
       if (session?.access_token) {
-        sendTokenToExtension(session.access_token);
+        // Small delay to ensure content script is loaded
+        setTimeout(() => {
+          sendTokenToExtension(session.access_token);
+        }, 1000);
       }
     });
 
@@ -42,8 +48,13 @@ const ExtensionAuth = () => {
 
   const sendTokenToExtension = (token: string) => {
     try {
-      // Send token to extension via postMessage
-      // The extension will be listening for this message
+      console.log('[ExtensionAuth] Sending token to extension');
+      
+      // Method 1: Store token in window for content script to pick up
+      (window as any).__RECAP_AUTH_TOKEN__ = token;
+
+      // Method 2: Send token to extension via postMessage
+      // The content script will forward this to the extension
       window.postMessage(
         {
           type: 'RECAP_EXTENSION_AUTH',
@@ -53,7 +64,7 @@ const ExtensionAuth = () => {
         window.location.origin
       );
 
-      // Also try to send to opener window if available
+      // Method 3: Also try to send to opener window if available
       if (window.opener && !window.opener.closed) {
         window.opener.postMessage(
           {
@@ -65,9 +76,9 @@ const ExtensionAuth = () => {
         );
       }
 
-      // Try to send via chrome.runtime if available (for extension context)
-      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.id) {
-        chrome.runtime.sendMessage({
+      // Method 4: Try to send via chrome.runtime if available (for extension context)
+      if (typeof chrome !== 'undefined' && chrome.runtime && (chrome.runtime as any).id) {
+        chrome.runtime.sendMessage((chrome.runtime as any).id, {
           type: 'RECAP_EXTENSION_AUTH',
           token: token,
           success: true
@@ -79,15 +90,18 @@ const ExtensionAuth = () => {
       // Show success message
       setError(null);
       
-      // Close window after a short delay
+      // Give time for message to be received, then close window
       setTimeout(() => {
-        if (window.opener) {
+        try {
           window.close();
+        } catch (e) {
+          // Window might not be closable (user opened it manually)
+          console.log('Window cannot be closed automatically');
         }
-      }, 1500);
+      }, 2000);
     } catch (err: any) {
       console.error('Error sending token to extension:', err);
-      setError('Failed to send token to extension');
+      setError('Failed to send token to extension. Please try again.');
     }
   };
 
@@ -110,13 +124,18 @@ const ExtensionAuth = () => {
 
         {user ? (
           <div className="text-center space-y-4">
-            <div className="text-2xl font-bold">✅ Authenticated!</div>
+            <div className="text-2xl font-bold text-green-500">✅ Authenticated!</div>
             <p className="text-muted-foreground">
-              Your extension is now connected. You can close this window.
+              Your extension is now connected. This window will close automatically.
             </p>
             <p className="text-sm text-muted-foreground">
-              If the window doesn't close automatically, you can close it manually.
+              You can now use the extension to save content to your library.
             </p>
+            <div className="mt-4 p-3 bg-green-500/10 rounded-lg">
+              <p className="text-sm text-green-400">
+                Token sent to extension successfully!
+              </p>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">
