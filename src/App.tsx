@@ -11,6 +11,7 @@ import Graph from "./pages/Graph";
 import Review from "./pages/Review";
 import Settings from "./pages/Settings";
 import CardDetail from "./pages/CardDetail";
+import ExtensionAuth from "./pages/ExtensionAuth";
 
 const queryClient = new QueryClient();
 
@@ -28,6 +29,7 @@ const App = () => (
           <Route path="/review" element={<Review />} />
           <Route path="/settings" element={<Settings />} />
           <Route path="/card/:id" element={<CardDetail />} />
+          <Route path="/extension-auth" element={<ExtensionAuth />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

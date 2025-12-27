@@ -54,7 +54,8 @@ function updatePageInfo(data) {
       elements.transcriptStatus.innerHTML = `✓ Transcript available (${data.transcriptSource})`;
     } else {
       elements.transcriptStatus.className = 'transcript-status warning';
-      elements.transcriptStatus.innerHTML = '⚠ No transcript found';
+      const errorMsg = data.transcriptError || 'No transcript found';
+      elements.transcriptStatus.innerHTML = `⚠ ${errorMsg}`;
     }
   } else {
     elements.pageType.innerHTML = '📄 Web Page';
@@ -120,12 +121,26 @@ async function extractPage() {
 async function savePage() {
   if (!extractedData) return;
 
+  // Check authentication first
+  const isAuthenticated = await checkAuth();
+  if (!isAuthenticated) {
+    showAuth();
+    setButtonState('error', 'Please sign in to save');
+    return;
+  }
+
   setButtonState('saving');
 
   try {
     const response = await chrome.runtime.sendMessage({ action: 'saveCurrentPage' });
     
     if (response.error) {
+      // Check if it's an auth error
+      if (response.error.includes('Unauthorized') || response.error.includes('sign in')) {
+        showAuth();
+        setButtonState('error', 'Please sign in to save');
+        return;
+      }
       throw new Error(response.error);
     }
 
@@ -135,7 +150,13 @@ async function savePage() {
     setTimeout(() => window.close(), 1500);
   } catch (error) {
     console.error('Save error:', error);
-    setButtonState('error', error.message);
+    const errorMsg = error.message || 'Failed to save';
+    if (errorMsg.includes('Unauthorized') || errorMsg.includes('sign in')) {
+      showAuth();
+      setButtonState('error', 'Please sign in to save');
+    } else {
+      setButtonState('error', errorMsg);
+    }
   }
 }
 
@@ -149,9 +170,15 @@ async function checkAuth() {
 async function init() {
   showLoading();
 
-  // For now, skip auth check and just extract
-  // In production, you'd check auth first
+  // Extract page data first
   await extractPage();
+  
+  // Check auth status but don't block
+  const isAuthenticated = await checkAuth();
+  if (!isAuthenticated) {
+    // Still show content, but button will prompt for auth
+    console.log('Not authenticated - user will be prompted on save');
+  }
 }
 
 // Event listeners
@@ -165,3 +192,4 @@ elements.authButton.addEventListener('click', () => {
 
 // Start
 init();
+

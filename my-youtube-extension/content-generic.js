@@ -102,3 +102,4 @@
 
   console.log('[Recap Extension] Generic content script loaded');
 })();
+

@@ -59,8 +59,21 @@ async function saveToBackend(data, accessToken) {
   });
 
   if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Failed to save: ${error}`);
+    let errorText = await response.text();
+    try {
+      // Try to parse as JSON for better error messages
+      const errorJson = JSON.parse(errorText);
+      errorText = errorJson.error || errorJson.message || errorText;
+    } catch (e) {
+      // Not JSON, use as-is
+    }
+    
+    // Check for auth errors specifically
+    if (response.status === 401 || errorText.includes('Unauthorized') || errorText.includes('sign in')) {
+      throw new Error(JSON.stringify({ error: 'Unauthorized - please sign in' }));
+    }
+    
+    throw new Error(`Failed to save: ${errorText}`);
   }
 
   return response.json();
@@ -149,3 +162,4 @@ chrome.action.onClicked.addListener(async (tab) => {
 });
 
 console.log('[Recap Extension] Background service worker loaded');
+
