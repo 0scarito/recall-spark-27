@@ -2,6 +2,7 @@
 
 // Configuration - update with your Supabase URL
 const CONFIG = {
+  appUrl: 'https://recall-spark-27.lovable.app',
   supabaseUrl: 'https://mvedoscvslmbieugxknd.supabase.co',
   supabaseAnonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im12ZWRvc2N2c2xtYmlldWd4a25kIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjIyMzQxOTAsImV4cCI6MjA3NzgxMDE5MH0.vVztPm4EwISXC9wpbdF-Jg7TSxHILxIEk1sc-IaYPps'
 };
@@ -90,6 +91,59 @@ async function setAuthToken(token) {
   await chrome.storage.local.set({ supabase_access_token: token });
 }
 
+// Clear auth token
+async function clearAuthToken() {
+  await chrome.storage.local.remove(['supabase_access_token']);
+}
+
+// Inject auth content script into the auth page
+async function injectAuthScript(tabId) {
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content-auth.js']
+    });
+  } catch (error) {
+    console.error('Failed to inject auth script:', error);
+  }
+}
+
+// Open authentication page and listen for token
+async function authenticateWithApp() {
+  return new Promise((resolve, reject) => {
+    // Open auth page
+    chrome.tabs.create({
+      url: `${CONFIG.appUrl}/extension-auth?extension=true`,
+      active: true
+    }, async (tab) => {
+      // Inject content script to bridge messages
+      await injectAuthScript(tab.id);
+
+      // Listen for messages from the auth page
+      const messageListener = (message, sender, sendResponse) => {
+        if (message.type === 'RECAP_EXTENSION_AUTH' && message.success) {
+          // Store the token
+          setAuthToken(message.token).then(() => {
+            // Close the auth tab
+            chrome.tabs.remove(tab.id);
+            // Remove listener
+            chrome.runtime.onMessage.removeListener(messageListener);
+            resolve(message.token);
+          });
+        }
+      };
+
+      chrome.runtime.onMessage.addListener(messageListener);
+
+      // Timeout after 5 minutes
+      setTimeout(() => {
+        chrome.runtime.onMessage.removeListener(messageListener);
+        reject(new Error('Authentication timeout'));
+      }, 300000);
+    });
+  });
+}
+
 // Handle messages from popup
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   (async () => {
@@ -120,8 +174,23 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           }
 
           const token = await getAuthToken();
+          if (!token) {
+            sendResponse({ error: 'Not authenticated', needsAuth: true });
+            return;
+          }
+
           const result = await saveToBackend(data, token);
           sendResponse({ success: true, ...result });
+          break;
+        }
+
+        case 'authenticate': {
+          try {
+            const token = await authenticateWithApp();
+            sendResponse({ success: true, token });
+          } catch (error) {
+            sendResponse({ error: error.message });
+          }
           break;
         }
 
@@ -137,6 +206,12 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
           break;
         }
 
+        case 'clearAuthToken': {
+          await clearAuthToken();
+          sendResponse({ success: true });
+          break;
+        }
+
         case 'checkAuth': {
           const token = await getAuthToken();
           sendResponse({ isAuthenticated: !!token });
@@ -144,6 +219,19 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         }
 
         default:
+          // Check if it's an auth token message from content script
+          if (request.type === 'RECAP_EXTENSION_AUTH' && request.success) {
+            // Verify sender is from our app
+            if (sender.tab && sender.tab.url && sender.tab.url.includes(CONFIG.appUrl)) {
+              await setAuthToken(request.token);
+              sendResponse({ success: true });
+              // Close the auth tab
+              if (sender.tab && sender.tab.id) {
+                chrome.tabs.remove(sender.tab.id);
+              }
+              return;
+            }
+          }
           sendResponse({ error: 'Unknown action' });
       }
     } catch (error) {
@@ -155,6 +243,29 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true; // Keep channel open for async response
 });
 
+// Listen for messages from web pages (for auth token)
+// This allows the ExtensionAuth page to send tokens directly
+if (chrome.runtime.onMessageExternal) {
+  chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+    if (message.type === 'RECAP_EXTENSION_AUTH' && message.success) {
+      // Verify sender is from our app
+      if (sender.url && sender.url.includes(CONFIG.appUrl)) {
+        setAuthToken(message.token).then(() => {
+          sendResponse({ success: true });
+          // Close the auth tab if we can find it
+          chrome.tabs.query({ url: `${CONFIG.appUrl}/extension-auth*` }, (tabs) => {
+            if (tabs.length > 0) {
+              chrome.tabs.remove(tabs[0].id);
+            }
+          });
+        });
+        return true;
+      }
+    }
+  });
+}
+
+
 // Listen for extension icon click (quick save)
 chrome.action.onClicked.addListener(async (tab) => {
   // This only fires if popup is not defined
@@ -162,4 +273,3 @@ chrome.action.onClicked.addListener(async (tab) => {
 });
 
 console.log('[Recap Extension] Background service worker loaded');
-

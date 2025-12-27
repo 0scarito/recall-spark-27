@@ -1,5 +1,7 @@
 // Popup script - handles UI interactions
 
+const APP_URL = 'https://recall-spark-27.lovable.app';
+
 const elements = {
   loading: document.getElementById('loading'),
   content: document.getElementById('content'),
@@ -12,7 +14,8 @@ const elements = {
   saveIcon: document.getElementById('saveIcon'),
   saveText: document.getElementById('saveText'),
   statusMessage: document.getElementById('statusMessage'),
-  authButton: document.getElementById('authButton')
+  authButton: document.getElementById('authButton'),
+  authStatus: document.getElementById('authStatus')
 };
 
 let extractedData = null;
@@ -126,6 +129,7 @@ async function savePage() {
   if (!isAuthenticated) {
     showAuth();
     setButtonState('error', 'Please sign in to save');
+    elements.authStatus.textContent = 'Click the button above to sign in';
     return;
   }
 
@@ -136,9 +140,10 @@ async function savePage() {
     
     if (response.error) {
       // Check if it's an auth error
-      if (response.error.includes('Unauthorized') || response.error.includes('sign in')) {
+      if (response.error.includes('Unauthorized') || response.error.includes('sign in') || response.needsAuth) {
         showAuth();
         setButtonState('error', 'Please sign in to save');
+        elements.authStatus.textContent = 'Your session may have expired. Please sign in again.';
         return;
       }
       throw new Error(response.error);
@@ -154,6 +159,7 @@ async function savePage() {
     if (errorMsg.includes('Unauthorized') || errorMsg.includes('sign in')) {
       showAuth();
       setButtonState('error', 'Please sign in to save');
+      elements.authStatus.textContent = 'Your session may have expired. Please sign in again.';
     } else {
       setButtonState('error', errorMsg);
     }
@@ -166,30 +172,101 @@ async function checkAuth() {
   return response.isAuthenticated;
 }
 
+// Authenticate with app
+async function authenticate() {
+  elements.authStatus.textContent = 'Opening sign-in page...';
+  elements.authButton.disabled = true;
+
+  try {
+    // Open auth page
+    const authTab = await chrome.tabs.create({
+      url: `${APP_URL}/extension-auth?extension=true`,
+      active: true
+    });
+
+    // Listen for messages from the auth page
+    const messageListener = async (message, sender, sendResponse) => {
+      if (message.type === 'RECAP_EXTENSION_AUTH' && message.success) {
+        // Store the token
+        await chrome.runtime.sendMessage({
+          action: 'setAuthToken',
+          token: message.token
+        });
+
+        // Close the auth tab
+        chrome.tabs.remove(authTab.id);
+
+        // Update UI
+        elements.authStatus.textContent = '✓ Authenticated!';
+        elements.authStatus.className = 'auth-status authenticated';
+        
+        // Remove listener
+        chrome.runtime.onMessage.removeListener(messageListener);
+        
+        // Reload to show content
+        setTimeout(() => {
+          init();
+        }, 500);
+      }
+    };
+
+    chrome.runtime.onMessage.addListener(messageListener);
+
+    // Also listen for window messages (postMessage from the page)
+    window.addEventListener('message', (event) => {
+      if (event.origin !== APP_URL) return;
+      
+      if (event.data.type === 'RECAP_EXTENSION_AUTH' && event.data.success) {
+        chrome.runtime.sendMessage({
+          action: 'setAuthToken',
+          token: event.data.token
+        }).then(() => {
+          chrome.tabs.remove(authTab.id);
+          elements.authStatus.textContent = '✓ Authenticated!';
+          elements.authStatus.className = 'auth-status authenticated';
+          setTimeout(() => {
+            init();
+          }, 500);
+        });
+      }
+    });
+
+    // Timeout after 5 minutes
+    setTimeout(() => {
+      chrome.runtime.onMessage.removeListener(messageListener);
+      elements.authButton.disabled = false;
+      elements.authStatus.textContent = 'Authentication timeout. Please try again.';
+    }, 300000);
+
+  } catch (error) {
+    console.error('Auth error:', error);
+    elements.authStatus.textContent = 'Failed to open sign-in page. Please try again.';
+    elements.authButton.disabled = false;
+  }
+}
+
 // Initialize popup
 async function init() {
   showLoading();
 
-  // Extract page data first
-  await extractPage();
-  
-  // Check auth status but don't block
+  // Check auth status
   const isAuthenticated = await checkAuth();
-  if (!isAuthenticated) {
-    // Still show content, but button will prompt for auth
-    console.log('Not authenticated - user will be prompted on save');
+  
+  if (isAuthenticated) {
+    elements.authStatus.textContent = '✓ Signed in';
+    elements.authStatus.className = 'auth-status authenticated';
+  } else {
+    elements.authStatus.textContent = 'Not signed in';
+    elements.authStatus.className = 'auth-status';
   }
+
+  // Extract page data
+  await extractPage();
 }
 
 // Event listeners
 elements.saveButton.addEventListener('click', savePage);
-
-elements.authButton.addEventListener('click', () => {
-  // Open the main app for authentication
-  chrome.tabs.create({ url: 'https://mvedoscvslmbieugxknd.lovableproject.com/' });
-  window.close();
-});
+elements.authButton.addEventListener('click', authenticate);
 
 // Start
 init();
-
