@@ -1,73 +1,53 @@
-# Welcome to your Lovable project
+# Recall Spark
 
-## Project info
+A personal knowledge-retention app: capture web pages and YouTube videos with one click, turn them into AI-summarized knowledge cards, then actually retain them through spaced-repetition review, a knowledge graph, and chat over your own library. Built because reading and watching is easy — remembering is the hard part.
 
-**URL**: https://lovable.dev/projects/19122f8e-86da-4fce-97b4-7177cb5d4046
+> Status: work in progress. The capture → summarize → review loop is wired end to end; some surfaces (graph, chat history UI) are still being finished.
 
-## How can I edit this code?
+## Features
 
-There are several ways of editing your application.
+- **One-click capture via browser extension** — a Manifest V3 Chrome extension extracts the current page or YouTube video (including the transcript when available) and posts it to a Supabase Edge Function, which summarizes it and files it as a knowledge card.
+- **AI summarization and auto-tagging** — content is summarized with Gemini 2.5 Flash through an OpenAI-compatible gateway. YouTube videos without transcripts fall back to a Perplexity search; hard-to-scrape pages fall back to Firecrawl.
+- **Knowledge card library** — dashboard with collections, drag-and-drop organization (dnd-kit), a hierarchical tag sidebar, and Postgres full-text search (generated `tsvector` column, GIN-indexed).
+- **Spaced-repetition review** — an edge function generates Q&A pairs from each card's content; review sessions track ease factor, interval, and next-review date (SM-2-style scheduling), and the Review page serves only what's due.
+- **Chat with your library** — ask questions scoped to a single card or across all your cards; conversation history is persisted per conversation.
+- **Knowledge graph** — visualize connections between captured cards.
+- **Per-user data isolation** — Supabase Auth plus row-level security policies on every table (`knowledge_cards`, `questions`, `review_sessions`, `chat_messages`).
 
-**Use Lovable**
+## Stack
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/19122f8e-86da-4fce-97b4-7177cb5d4046) and start prompting.
+- **Frontend:** React 18 + TypeScript + Vite, React Router, TanStack Query, shadcn/ui (Radix primitives), Tailwind CSS, dnd-kit, Recharts
+- **Backend:** Supabase — Postgres (RLS, full-text search), Auth, and six Deno Edge Functions (`save-from-extension`, `summarize-content`, `generate-questions`, `chat-knowledge`, `analyze-file`, `transcribe-audio`)
+- **AI:** Gemini 2.5 Flash via an OpenAI-compatible gateway; Perplexity (YouTube metadata fallback); Firecrawl (scraping fallback)
+- **Extension:** vanilla JS, Manifest V3 (`my-youtube-extension/`)
+- **Edge API:** a standalone edge-runtime handler (`api/fetch-summarize.ts`) for fetch + summarize of arbitrary URLs
 
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
+## Getting Started
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+git clone https://github.com/0scarito/recall-spark-27.git
+cd recall-spark-27
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+The frontend expects a `.env` at the repo root pointing at your Supabase project:
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```sh
+VITE_SUPABASE_URL=<your-supabase-project-url>
+VITE_SUPABASE_PROJECT_ID=<your-supabase-project-id>
+VITE_SUPABASE_PUBLISHABLE_KEY=<your-supabase-anon-key>
+```
 
-**Use GitHub Codespaces**
+Apply the SQL in `supabase/migrations/` to your project, deploy the functions in `supabase/functions/`, and set the function secrets (AI gateway key, Perplexity key, Firecrawl key) via `supabase secrets set`.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+To use the capture extension, load `my-youtube-extension/` as an unpacked extension in Chrome and update the `CONFIG` block in `background.js` with your own app URL and Supabase project values.
 
-## What technologies are used for this project?
+## How it works
 
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/19122f8e-86da-4fce-97b4-7177cb5d4046) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- **Routing** lives in `src/App.tsx`: `/` (landing) → `/home` (dashboard), `/chat`, `/graph`, `/review`, `/settings`, `/card/:id`, and `/extension-auth` (the page the extension uses to pick up an authenticated session).
+- **Capture flow:** extension content scripts (`content-youtube.js`, `content-generic.js`) extract title, content, and transcript → `background.js` posts to the `save-from-extension` edge function → the function summarizes and tags the content and inserts a `knowledge_cards` row for the authenticated user.
+- **Review flow:** `generate-questions` produces Q&A pairs from a card's text; each answer recorded on the Review page writes a `review_sessions` row updating ease factor, interval days, and next review date — `useQuestions.ts` filters for due cards.
+- **Chat flow:** `chat-knowledge` builds the system-prompt context from either one card's full text or all card summaries, calls the model with prior turns, and persists both sides of the exchange to `chat_messages`.
+- **Data model:** four RLS-protected tables keyed to `auth.uid()` — cards, generated questions, review sessions, chat messages — with full-text search over card title/summary/URL.
+- **UI composition:** feature components (`Dashboard`, `KnowledgeCard`, `CollectionManager`, `TagHierarchySidebar`, `ConnectionsGraph`, `ChatInterface`) sit on top of shadcn/ui primitives in `src/components/ui/`.
